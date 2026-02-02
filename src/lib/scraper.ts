@@ -1,9 +1,10 @@
 import { createServiceClient } from './supabase'
-import type { VagaInsert } from './types'
+import type { VagaInsert, ScrapeResult, ScrapeStatusType } from './types'
 import { createHash } from 'crypto'
 
 const BASE_URL = 'https://controlequadropessoal.educacao.mg.gov.br'
 const DIVULGACAO_PATH = '/divulgacao/7/40/7020'
+const FETCH_TIMEOUT = 30000 // 30 segundos
 
 // Helper para limpar texto HTML
 function clean(s: string = ''): string {
@@ -35,23 +36,84 @@ function makeHash(s: string): string {
   return createHash('sha1').update(s).digest('hex').slice(0, 16)
 }
 
-// Busca HTML de uma URL
-async function fetchHtml(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Charset': 'ISO-8859-1,utf-8',
-    },
-  })
+// Resultado do fetch com informações de erro
+interface FetchResult {
+  ok: boolean
+  status: number
+  html: string
+  error?: string
+}
+
+// Busca HTML de uma URL com timeout e tratamento de erros
+async function fetchHtml(url: string): Promise<FetchResult> {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
   
-  const buffer = await response.arrayBuffer()
-  // Decode como ISO-8859-1 (latin1) para preservar acentos
-  const decoder = new TextDecoder('iso-8859-1')
-  return decoder.decode(buffer)
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml',
+        'Accept-Charset': 'ISO-8859-1,utf-8',
+        'User-Agent': 'PainelVagas/1.0',
+      },
+      signal: controller.signal,
+    })
+    
+    clearTimeout(timeoutId)
+    
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        html: '',
+        error: `HTTP ${response.status}: ${response.statusText}`,
+      }
+    }
+    
+    const buffer = await response.arrayBuffer()
+    const decoder = new TextDecoder('iso-8859-1')
+    const html = decoder.decode(buffer)
+    
+    return {
+      ok: true,
+      status: response.status,
+      html,
+    }
+  } catch (e) {
+    clearTimeout(timeoutId)
+    
+    const error = e as Error
+    
+    if (error.name === 'AbortError') {
+      return {
+        ok: false,
+        status: 0,
+        html: '',
+        error: 'Timeout: servidor não respondeu em 30 segundos',
+      }
+    }
+    
+    return {
+      ok: false,
+      status: 0,
+      html: '',
+      error: `Erro de conexão: ${error.message}`,
+    }
+  }
+}
+
+// Verifica se o HTML contém a estrutura esperada do site
+function isValidStructure(html: string): boolean {
+  // Verifica se tem elementos característicos do site
+  const hasTable = html.includes('class="tabela') || html.includes('class=\'tabela')
+  const hasEducacao = html.toLowerCase().includes('educacao') || html.toLowerCase().includes('educação')
+  const hasDivulgacao = html.toLowerCase().includes('divulgacao') || html.toLowerCase().includes('divulgação')
+  
+  return hasTable || (hasEducacao && hasDivulgacao)
 }
 
 // Descobre quantas páginas existem
-async function discoverPages(html: string): Promise<number> {
+function discoverPages(html: string): number {
   // Tenta "Página X de Y"
   const m = html.match(/Página\s+(\d+)\s+de\s+(\d+)/i)
   if (m) {
@@ -134,9 +196,7 @@ function parseEdital(html: string, urlEdital: string): VagaInsert | null {
   }
   
   let horario = ''
-  // "08 hora(s)" ou "8 hora(s)"
   const m1 = horarioTexto.match(/\b(\d{1,2})\s*hora/i)
-  // "8h" ou "8:00"
   const m2 = horarioTexto.match(/\b(\d{1,2})(?:[:h](\d{2}))?\b/)
   
   let hh: string | null = null
@@ -242,36 +302,138 @@ async function geocodeAddress(address: string): Promise<{ lat: number; lng: numb
   return null
 }
 
+// Salva o status do scraping no Supabase
+async function saveScrapingStatus(
+  status: ScrapeStatusType,
+  message: string,
+  vagasEncontradas: number,
+  httpStatus: number | null,
+  durationSeconds: number
+): Promise<void> {
+  try {
+    const supabase = createServiceClient()
+    
+    await supabase.from('scrape_status').insert({
+      status,
+      message,
+      vagas_encontradas: vagasEncontradas,
+      http_status: httpStatus,
+      duration_seconds: durationSeconds,
+    })
+  } catch (e) {
+    console.error('Erro ao salvar status:', e)
+  }
+}
+
 // Função principal de scraping
-export async function scrapeVagas(): Promise<{ success: boolean; count: number; errors: string[] }> {
+export async function scrapeVagas(): Promise<ScrapeResult> {
+  const startTime = Date.now()
   const errors: string[] = []
   const vagas: VagaInsert[] = []
+  let httpStatus: number | undefined
+  
+  const getDuration = () => (Date.now() - startTime) / 1000
   
   try {
     // 1. Buscar primeira página para descobrir total
     console.log('Buscando página inicial...')
-    const firstPageHtml = await fetchHtml(`${BASE_URL}${DIVULGACAO_PATH}`)
-    const totalPages = await discoverPages(firstPageHtml)
+    const firstPageResult = await fetchHtml(`${BASE_URL}${DIVULGACAO_PATH}`)
+    httpStatus = firstPageResult.status
+    
+    // Verificar se conseguiu acessar o site
+    if (!firstPageResult.ok) {
+      const result: ScrapeResult = {
+        status: 'FONTE_INDISPONIVEL',
+        message: `Não foi possível acessar o site da SEE/MG: ${firstPageResult.error}`,
+        count: 0,
+        httpStatus: firstPageResult.status,
+        errors: [firstPageResult.error || 'Erro desconhecido'],
+        durationSeconds: getDuration(),
+      }
+      
+      await saveScrapingStatus(
+        result.status,
+        result.message,
+        result.count,
+        result.httpStatus || null,
+        result.durationSeconds!
+      )
+      
+      return result
+    }
+    
+    // Verificar se a estrutura do HTML é válida
+    if (!isValidStructure(firstPageResult.html)) {
+      const result: ScrapeResult = {
+        status: 'ESTRUTURA_INVALIDA',
+        message: 'O site da SEE/MG retornou uma página com estrutura inesperada. O site pode estar em manutenção.',
+        count: 0,
+        httpStatus: firstPageResult.status,
+        errors: ['Estrutura HTML não reconhecida'],
+        durationSeconds: getDuration(),
+      }
+      
+      await saveScrapingStatus(
+        result.status,
+        result.message,
+        result.count,
+        result.httpStatus || null,
+        result.durationSeconds!
+      )
+      
+      return result
+    }
+    
+    const totalPages = discoverPages(firstPageResult.html)
     console.log(`Total de páginas: ${totalPages}`)
     
     // 2. Coletar links de todas as páginas
     const allLinks: EditalLink[] = []
     
-    for (let page = 1; page <= totalPages; page++) {
-      const url = page === 1 
-        ? `${BASE_URL}${DIVULGACAO_PATH}` 
-        : `${BASE_URL}${DIVULGACAO_PATH}/page:${page}`
+    // Processar primeira página
+    const firstPageLinks = extractEditalLinks(firstPageResult.html)
+    allLinks.push(...firstPageLinks)
+    
+    // Processar páginas restantes
+    for (let page = 2; page <= totalPages; page++) {
+      const url = `${BASE_URL}${DIVULGACAO_PATH}/page:${page}`
       
       console.log(`Buscando página ${page}/${totalPages}...`)
-      const html = await fetchHtml(url)
-      const links = extractEditalLinks(html)
-      allLinks.push(...links)
+      const pageResult = await fetchHtml(url)
       
-      // Pequena pausa para não sobrecarregar o servidor
+      if (pageResult.ok) {
+        const links = extractEditalLinks(pageResult.html)
+        allLinks.push(...links)
+      } else {
+        errors.push(`Erro na página ${page}: ${pageResult.error}`)
+      }
+      
       await new Promise(r => setTimeout(r, 300))
     }
     
     console.log(`Total de editais encontrados: ${allLinks.length}`)
+    
+    // Se não encontrou nenhum edital
+    if (allLinks.length === 0) {
+      const result: ScrapeResult = {
+        status: 'SEM_VAGAS',
+        message: 'Não há vagas disponíveis no momento no site da SEE/MG.',
+        count: 0,
+        httpStatus,
+        errors,
+        durationSeconds: getDuration(),
+      }
+      
+      await saveScrapingStatus(
+        result.status,
+        result.message,
+        result.count,
+        result.httpStatus || null,
+        result.durationSeconds!
+      )
+      
+      return result
+    }
     
     // 3. Buscar cada edital
     for (let i = 0; i < allLinks.length; i++) {
@@ -279,8 +441,14 @@ export async function scrapeVagas(): Promise<{ success: boolean; count: number; 
       console.log(`Processando edital ${i + 1}/${allLinks.length}: ${link.urlEdital}`)
       
       try {
-        const editalHtml = await fetchHtml(link.urlEdital)
-        const vaga = parseEdital(editalHtml, link.urlEdital)
+        const editalResult = await fetchHtml(link.urlEdital)
+        
+        if (!editalResult.ok) {
+          errors.push(`Erro ao buscar edital ${link.urlEdital}: ${editalResult.error}`)
+          continue
+        }
+        
+        const vaga = parseEdital(editalResult.html, link.urlEdital)
         
         if (vaga) {
           // Geocodificar se tiver endereço
@@ -304,7 +472,6 @@ export async function scrapeVagas(): Promise<{ success: boolean; count: number; 
         errors.push(errorMsg)
       }
       
-      // Pequena pausa
       await new Promise(r => setTimeout(r, 200))
     }
     
@@ -313,7 +480,6 @@ export async function scrapeVagas(): Promise<{ success: boolean; count: number; 
       console.log(`Salvando ${vagas.length} vagas no Supabase...`)
       const supabase = createServiceClient()
       
-      // Upsert em batches de 50
       const batchSize = 50
       for (let i = 0; i < vagas.length; i += batchSize) {
         const batch = vagas.slice(i, i + batchSize)
@@ -329,18 +495,46 @@ export async function scrapeVagas(): Promise<{ success: boolean; count: number; 
       }
     }
     
-    return {
-      success: true,
+    const result: ScrapeResult = {
+      status: 'OK',
+      message: `Scraping concluído com sucesso. ${vagas.length} vagas encontradas.`,
       count: vagas.length,
+      httpStatus,
       errors,
+      durationSeconds: getDuration(),
     }
+    
+    await saveScrapingStatus(
+      result.status,
+      result.message,
+      result.count,
+      result.httpStatus || null,
+      result.durationSeconds!
+    )
+    
+    return result
+    
   } catch (e) {
     const errorMsg = `Erro fatal no scraping: ${e}`
     console.error(errorMsg)
-    return {
-      success: false,
+    
+    const result: ScrapeResult = {
+      status: 'ERRO',
+      message: 'Ocorreu um erro interno durante o scraping.',
       count: 0,
+      httpStatus,
       errors: [errorMsg, ...errors],
+      durationSeconds: getDuration(),
     }
+    
+    await saveScrapingStatus(
+      result.status,
+      result.message,
+      result.count,
+      result.httpStatus || null,
+      result.durationSeconds!
+    )
+    
+    return result
   }
 }

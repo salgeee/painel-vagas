@@ -33,21 +33,53 @@ export async function POST(request: Request) {
     }
     
     console.log('Iniciando scraping...')
-    const startTime = Date.now()
     
     const result = await scrapeVagas()
     
-    const duration = ((Date.now() - startTime) / 1000).toFixed(2)
-    console.log(`Scraping concluído em ${duration}s`)
+    console.log(`Scraping concluído: ${result.status} - ${result.count} vagas`)
+    
+    // Determinar código HTTP baseado no status
+    let httpCode = 200
+    
+    switch (result.status) {
+      case 'OK':
+        httpCode = 200
+        break
+      case 'SEM_VAGAS':
+        // 200 porque funcionou, só não tinha dados
+        httpCode = 200
+        break
+      case 'FONTE_INDISPONIVEL':
+        // 502 Bad Gateway - o upstream (site da SEE) falhou
+        httpCode = 502
+        break
+      case 'ESTRUTURA_INVALIDA':
+        // 502 Bad Gateway - resposta do upstream inválida
+        httpCode = 502
+        break
+      case 'ERRO':
+        // 500 Internal Server Error - erro nosso
+        httpCode = 500
+        break
+    }
     
     return NextResponse.json({
-      ...result,
-      duration: `${duration}s`,
-    })
+      status: result.status,
+      message: result.message,
+      count: result.count,
+      httpStatus: result.httpStatus,
+      errors: result.errors,
+      duration: `${result.durationSeconds?.toFixed(2)}s`,
+    }, { status: httpCode })
+    
   } catch (e) {
     console.error('Erro no endpoint de scraping:', e)
     return NextResponse.json(
-      { error: 'Erro interno do servidor', details: String(e) },
+      { 
+        status: 'ERRO',
+        error: 'Erro interno do servidor', 
+        details: String(e) 
+      },
       { status: 500 }
     )
   }
@@ -58,5 +90,15 @@ export async function GET() {
   return NextResponse.json({
     status: 'ok',
     message: 'Endpoint de scraping. Use POST com autenticação para executar.',
+    documentation: {
+      method: 'POST',
+      authentication: 'Bearer token ou query param ?secret=',
+      responses: {
+        200: 'OK ou SEM_VAGAS - scraping executou com sucesso',
+        401: 'Não autorizado - secret inválido',
+        500: 'Erro interno do servidor',
+        502: 'Bad Gateway - site fonte indisponível ou com estrutura inválida',
+      }
+    }
   })
 }

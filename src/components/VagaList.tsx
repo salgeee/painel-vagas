@@ -6,11 +6,39 @@ import { FilterBar, type Filters } from './FilterBar'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Vaga, VagaWithDistance, UserLocation } from '@/lib/types'
 import { getRouteDistance, getHaversineDistance } from '@/lib/distance'
+import { SearchX, Loader2 } from 'lucide-react'
 
 interface VagaListProps {
   vagas: Vaga[]
   isLoading: boolean
   userLocation: UserLocation | null
+}
+
+function VagaCardSkeleton() {
+  return (
+    <div className="rounded-xl border bg-card overflow-hidden">
+      <div className="h-2 bg-muted animate-pulse" />
+      <div className="p-5 space-y-4">
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-3/4" />
+          <div className="flex gap-2">
+            <Skeleton className="h-5 w-16 rounded-full" />
+            <Skeleton className="h-5 w-20 rounded-full" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Skeleton className="h-8 w-full rounded-lg" />
+          <Skeleton className="h-8 w-full rounded-lg" />
+        </div>
+        <Skeleton className="h-4 w-full" />
+        <div className="flex gap-2">
+          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-6 w-20 rounded-full" />
+        </div>
+        <Skeleton className="h-9 w-full rounded-lg" />
+      </div>
+    </div>
+  )
 }
 
 export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
@@ -24,6 +52,7 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   
   const [vagasComDistancia, setVagasComDistancia] = useState<VagaWithDistance[]>([])
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false)
+  const [distanceProgress, setDistanceProgress] = useState(0)
   
   // Extrair opções únicas para os filtros
   const municipios = useMemo(() => {
@@ -50,10 +79,13 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
       }
       
       setIsCalculatingDistances(true)
+      setDistanceProgress(0)
       
       const results: VagaWithDistance[] = []
+      const total = vagas.length
       
-      for (const vaga of vagas) {
+      for (let i = 0; i < vagas.length; i++) {
+        const vaga = vagas[i]
         let distanceKm: number | null = null
         
         if (vaga.lat && vaga.lng) {
@@ -77,6 +109,12 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
         }
         
         results.push({ ...vaga, distanceKm })
+        setDistanceProgress(Math.round(((i + 1) / total) * 100))
+        
+        // Pequena pausa para não sobrecarregar a API
+        if (i < vagas.length - 1 && vaga.lat && vaga.lng) {
+          await new Promise(r => setTimeout(r, 50))
+        }
       }
       
       setVagasComDistancia(results)
@@ -146,11 +184,28 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-32 w-full" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="space-y-6">
+        {/* Filter skeleton */}
+        <div className="p-4 rounded-xl bg-card border">
+          <div className="flex items-center gap-3 mb-4">
+            <Skeleton className="h-10 w-10 rounded-lg" />
+            <div>
+              <Skeleton className="h-5 w-24 mb-1" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+            <Skeleton className="h-10 w-full rounded-lg" />
+          </div>
+        </div>
+        
+        {/* Cards skeleton */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {[...Array(6)].map((_, i) => (
-            <Skeleton key={i} className="h-64 w-full" />
+            <VagaCardSkeleton key={i} />
           ))}
         </div>
       </div>
@@ -169,22 +224,45 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
         vagasFiltradas={vagasFiltradas.length}
       />
       
+      {/* Progress de cálculo de distâncias */}
       {isCalculatingDistances && userLocation && (
-        <p className="text-sm text-muted-foreground animate-pulse">
-          Calculando distâncias...
-        </p>
+        <div className="p-4 rounded-xl bg-primary/5 border border-primary/20">
+          <div className="flex items-center gap-3">
+            <Loader2 className="w-5 h-5 text-primary animate-spin" />
+            <div className="flex-1">
+              <p className="text-sm font-medium">Calculando distâncias...</p>
+              <div className="mt-2 h-2 bg-primary/20 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-300 rounded-full"
+                  style={{ width: `${distanceProgress}%` }}
+                />
+              </div>
+            </div>
+            <span className="text-sm font-medium text-primary">{distanceProgress}%</span>
+          </div>
+        </div>
       )}
       
       {vagasFiltradas.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-muted-foreground">
-            Nenhuma vaga encontrada com os filtros selecionados.
+        <div className="text-center py-16">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+            <SearchX className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <h3 className="text-lg font-medium mb-2">Nenhuma vaga encontrada</h3>
+          <p className="text-muted-foreground max-w-md mx-auto">
+            Não encontramos vagas com os filtros selecionados. Tente ajustar os filtros ou limpe-os para ver todas as vagas.
           </p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {vagasFiltradas.map((vaga) => (
-            <VagaCard key={vaga.id} vaga={vaga} />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {vagasFiltradas.map((vaga, index) => (
+            <div 
+              key={vaga.id} 
+              className="animate-slide-up"
+              style={{ animationDelay: `${Math.min(index * 50, 500)}ms` }}
+            >
+              <VagaCard vaga={vaga} />
+            </div>
           ))}
         </div>
       )}

@@ -64,3 +64,31 @@ CREATE POLICY "Apenas service_role pode atualizar" ON vagas
 
 CREATE POLICY "Apenas service_role pode deletar" ON vagas
   FOR DELETE USING (auth.role() = 'service_role');
+
+-- ============================================
+-- Tabela de status do scraping
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS scrape_status (
+  id SERIAL PRIMARY KEY,
+  status TEXT NOT NULL, -- OK, FONTE_INDISPONIVEL, ESTRUTURA_INVALIDA, SEM_VAGAS, ERRO
+  message TEXT,
+  vagas_encontradas INTEGER DEFAULT 0,
+  http_status INTEGER,
+  duration_seconds FLOAT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Índice para buscar o último status rapidamente
+CREATE INDEX IF NOT EXISTS idx_scrape_status_created_at ON scrape_status(created_at DESC);
+
+-- Habilitar Row Level Security
+ALTER TABLE scrape_status ENABLE ROW LEVEL SECURITY;
+
+-- Política para leitura pública (anon pode ler status)
+CREATE POLICY "Status é público para leitura" ON scrape_status
+  FOR SELECT USING (true);
+
+-- Política para inserção apenas com service_role
+CREATE POLICY "Apenas service_role pode inserir status" ON scrape_status
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');

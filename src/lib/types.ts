@@ -66,3 +66,30 @@ export interface UserLocation {
 export interface VagaWithDistance extends Vaga {
   distanceKm: number | null
 }
+
+// Status do Scraping
+export type ScrapeStatusType = 
+  | 'OK' 
+  | 'FONTE_INDISPONIVEL' 
+  | 'ESTRUTURA_INVALIDA' 
+  | 'SEM_VAGAS' 
+  | 'ERRO'
+
+export interface ScrapeStatus {
+  id: number
+  status: ScrapeStatusType
+  message: string | null
+  vagas_encontradas: number
+  http_status: number | null
+  duration_seconds: number | null
+  created_at: string
+}
+
+export interface ScrapeResult {
+  status: ScrapeStatusType
+  message: string
+  count: number
+  httpStatus?: number
+  errors: string[]
+  durationSeconds?: number
+}

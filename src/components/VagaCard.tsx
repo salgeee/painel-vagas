@@ -1,6 +1,6 @@
 'use client'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import type { VagaWithDistance } from '@/lib/types'
@@ -11,7 +11,8 @@ import {
   Building2, 
   GraduationCap,
   ExternalLink,
-  Navigation
+  Navigation,
+  AlertTriangle
 } from 'lucide-react'
 
 interface VagaCardProps {
@@ -28,91 +29,118 @@ export function VagaCard({ vaga }: VagaCardProps) {
     return `${day}/${month}/${year}`
   }
   
-  // Cor do badge de distância
-  const getDistanceColor = (km: number | null) => {
-    if (km === null) return 'secondary'
-    if (km < 5) return 'default' // verde
-    if (km < 15) return 'secondary' // amarelo
-    return 'destructive' // vermelho
+  // Formata data relativa
+  const getRelativeDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const date = new Date(dateStr)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const diff = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (diff === 0) return 'Hoje'
+    if (diff === 1) return 'Amanhã'
+    if (diff > 1 && diff <= 7) return `Em ${diff} dias`
+    return null
   }
   
-  // Classe de cor customizada para distância
-  const getDistanceClass = (km: number | null) => {
-    if (km === null) return ''
-    if (km < 5) return 'bg-green-500 hover:bg-green-600'
-    if (km < 15) return 'bg-yellow-500 hover:bg-yellow-600 text-black'
-    return 'bg-red-500 hover:bg-red-600'
+  const relativeDate = getRelativeDate(vaga.data)
+  
+  // Cor do badge de distância
+  const getDistanceStyle = (km: number | null) => {
+    if (km === null) return { bg: 'bg-muted', text: 'text-muted-foreground' }
+    if (km < 5) return { bg: 'bg-emerald-500', text: 'text-white' }
+    if (km < 15) return { bg: 'bg-amber-500', text: 'text-white' }
+    return { bg: 'bg-rose-500', text: 'text-white' }
   }
+  
+  const distanceStyle = getDistanceStyle(vaga.distanceKm)
   
   return (
-    <Card className={`transition-all hover:shadow-lg ${isVencida ? 'opacity-60' : ''}`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-lg leading-tight">
-            {vaga.escola || 'Escola não informada'}
-          </CardTitle>
-          <div className="flex gap-2 flex-shrink-0">
+    <Card className={`group overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-primary/5 hover:-translate-y-1 ${isVencida ? 'opacity-60 grayscale-[30%]' : ''}`}>
+      {/* Header colorido */}
+      <div className={`h-2 ${isVencida ? 'bg-muted' : 'gradient-primary'}`} />
+      
+      <CardContent className="p-5 space-y-4">
+        {/* Título e badges */}
+        <div className="space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="font-semibold text-base leading-tight group-hover:text-primary transition-colors line-clamp-2">
+              {vaga.escola || 'Escola não informada'}
+            </h3>
+          </div>
+          
+          {/* Badges de status */}
+          <div className="flex flex-wrap gap-2">
             {isVencida && (
-              <Badge variant="destructive">Vencida</Badge>
+              <Badge variant="destructive" className="text-xs gap-1">
+                <AlertTriangle className="w-3 h-3" />
+                Vencida
+              </Badge>
+            )}
+            {relativeDate && !isVencida && (
+              <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-0">
+                {relativeDate}
+              </Badge>
             )}
             {vaga.distanceKm !== null && (
-              <Badge className={getDistanceClass(vaga.distanceKm)}>
-                <Navigation className="w-3 h-3 mr-1" />
+              <Badge className={`text-xs gap-1 ${distanceStyle.bg} ${distanceStyle.text} border-0`}>
+                <Navigation className="w-3 h-3" />
                 {vaga.distanceKm.toFixed(1)} km
               </Badge>
             )}
           </div>
         </div>
-        {vaga.escola_codigo && (
-          <p className="text-sm text-muted-foreground">
-            Código: {vaga.escola_codigo}
-          </p>
-        )}
-      </CardHeader>
-      
-      <CardContent className="space-y-4">
-        {/* Data e Horário */}
-        <div className="flex flex-wrap gap-4">
+        
+        {/* Informações principais */}
+        <div className="grid grid-cols-2 gap-3">
           <div className="flex items-center gap-2 text-sm">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
+            <div className="p-1.5 rounded-md bg-primary/10">
+              <Calendar className="w-3.5 h-3.5 text-primary" />
+            </div>
             <span className="font-medium">{formatDate(vaga.data)}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
-            <Clock className="w-4 h-4 text-muted-foreground" />
+            <div className="p-1.5 rounded-md bg-primary/10">
+              <Clock className="w-3.5 h-3.5 text-primary" />
+            </div>
             <span className="font-medium">{vaga.horario || '-'}</span>
           </div>
         </div>
         
         {/* Localização */}
-        <div className="flex items-start gap-2 text-sm">
-          <MapPin className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-          <span>
+        <div className="flex items-start gap-2 text-sm text-muted-foreground">
+          <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span className="line-clamp-2">
             {vaga.endereco || vaga.municipio || 'Endereço não informado'}
             {vaga.municipio && vaga.endereco && ` - ${vaga.municipio}`}
           </span>
         </div>
         
-        {/* Cargo e Categoria */}
-        <div className="flex flex-wrap gap-2">
+        {/* Tags */}
+        <div className="flex flex-wrap gap-1.5">
           {vaga.cargo && (
-            <Badge variant="outline" className="gap-1">
+            <Badge variant="outline" className="text-xs gap-1 bg-background">
               <Building2 className="w-3 h-3" />
               {vaga.cargo}
             </Badge>
           )}
-          {vaga.categoria && (
-            <Badge variant="outline">{vaga.categoria}</Badge>
-          )}
           {vaga.turno && (
-            <Badge variant="outline">{vaga.turno}</Badge>
+            <Badge variant="outline" className="text-xs bg-background">
+              {vaga.turno}
+            </Badge>
+          )}
+          {vaga.categoria && (
+            <Badge variant="outline" className="text-xs bg-background">
+              {vaga.categoria}
+            </Badge>
           )}
         </div>
         
         {/* Conteúdo/Disciplina */}
         {vaga.conteudo && (
-          <div className="flex items-center gap-2 text-sm">
-            <GraduationCap className="w-4 h-4 text-muted-foreground" />
-            <span>{vaga.conteudo}</span>
+          <div className="flex items-center gap-2 text-sm p-2 rounded-lg bg-muted/50">
+            <GraduationCap className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <span className="text-muted-foreground line-clamp-1">{vaga.conteudo}</span>
           </div>
         )}
         
@@ -125,9 +153,11 @@ export function VagaCard({ vaga }: VagaCardProps) {
         
         {/* Observações */}
         {vaga.observacoes && (
-          <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
-            {vaga.observacoes}
-          </p>
+          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+            <p className="text-xs text-amber-800 dark:text-amber-200 line-clamp-3">
+              {vaga.observacoes}
+            </p>
+          </div>
         )}
         
         {/* Link do Edital */}
@@ -135,11 +165,11 @@ export function VagaCard({ vaga }: VagaCardProps) {
           <Button
             variant="outline"
             size="sm"
-            className="w-full"
+            className="w-full group/btn hover:bg-primary hover:text-primary-foreground hover:border-primary transition-all"
             asChild
           >
             <a href={vaga.url_edital} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="w-4 h-4 mr-2" />
+              <ExternalLink className="w-4 h-4 mr-2 group-hover/btn:animate-pulse" />
               Ver Edital Completo
             </a>
           </Button>
