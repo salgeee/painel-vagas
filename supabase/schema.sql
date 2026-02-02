@@ -92,3 +92,22 @@ CREATE POLICY "Status é público para leitura" ON scrape_status
 -- Política para inserção apenas com service_role
 CREATE POLICY "Apenas service_role pode inserir status" ON scrape_status
   FOR INSERT WITH CHECK (auth.role() = 'service_role');
+
+-- ============================================
+-- Cache de geocoding (evita repetir Nominatim para o mesmo endereço)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS geocode_cache (
+  address_key TEXT PRIMARY KEY,
+  lat FLOAT NOT NULL,
+  lng FLOAT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_geocode_cache_updated_at ON geocode_cache(updated_at);
+
+ALTER TABLE geocode_cache ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Apenas service_role pode ler/inserir/atualizar cache" ON geocode_cache
+  FOR ALL USING (auth.role() = 'service_role')
+  WITH CHECK (auth.role() = 'service_role');

@@ -76,7 +76,7 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
     return unique.sort() as string[]
   }, [vagas])
   
-  // Calcular distâncias quando userLocation mudar
+  // Calcular distâncias (usa lat/lng já preenchidos pelo geocode batch no backend)
   useEffect(() => {
     async function calculateDistances() {
       if (!userLocation) {
@@ -86,7 +86,6 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
       
       setIsCalculatingDistances(true)
       setDistanceProgress(0)
-      
       const results: VagaWithDistance[] = []
       const total = vagas.length
       
@@ -94,8 +93,7 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
         const vaga = vagas[i]
         let distanceKm: number | null = null
         
-        if (vaga.lat && vaga.lng) {
-          // Tentar OSRM primeiro
+        if (vaga.lat != null && vaga.lng != null) {
           try {
             distanceKm = await getRouteDistance(
               userLocation.lat,
@@ -104,7 +102,6 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
               vaga.lng
             )
           } catch {
-            // Fallback para Haversine
             distanceKm = getHaversineDistance(
               userLocation.lat,
               userLocation.lng,
@@ -112,15 +109,13 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
               vaga.lng
             )
           }
+          if (i < vagas.length - 1) {
+            await new Promise(r => setTimeout(r, 50))
+          }
         }
         
         results.push({ ...vaga, distanceKm })
         setDistanceProgress(Math.round(((i + 1) / total) * 100))
-        
-        // Pequena pausa para não sobrecarregar a API
-        if (i < vagas.length - 1 && vaga.lat && vaga.lng) {
-          await new Promise(r => setTimeout(r, 50))
-        }
       }
       
       setVagasComDistancia(results)
@@ -254,6 +249,15 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
         totalVagas={vagas.length}
         vagasFiltradas={vagasFiltradas.length}
       />
+      
+      {/* Aviso: ordenar por distância sem local definida */}
+      {filters.ordenarPor === 'distancia' && !userLocation && vagasFiltradas.length > 0 && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200">
+          <p className="text-sm font-medium">
+            Defina sua localização no cabeçalho (ícone de pin) para ordenar as vagas por distância.
+          </p>
+        </div>
+      )}
       
       {/* Progress de cálculo de distâncias */}
       {isCalculatingDistances && userLocation && (

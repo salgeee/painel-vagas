@@ -38,6 +38,8 @@ export async function POST(request: Request) {
     
     console.log(`Scraping concluído: ${result.status} - ${result.count} vagas`)
     
+    // Geocode roda em chamada separada (POST /api/geocode) para o site já exibir as vagas sem esperar lat/lng
+    
     // Determinar código HTTP baseado no status
     let httpCode = 200
     

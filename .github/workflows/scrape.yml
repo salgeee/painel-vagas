@@ -13,6 +13,7 @@ jobs:
     
     steps:
       - name: Trigger Scraping
+        id: scrape
         run: |
           echo "Iniciando scraping às $(date)"
           
@@ -30,7 +31,31 @@ jobs:
             exit 1
           fi
           
-          echo "Scraping concluído com sucesso!"
+          echo "Scraping concluído com sucesso! Vagas já disponíveis no site."
+        env:
+          SCRAPE_URL: ${{ secrets.SCRAPE_URL }}
+          SCRAPE_SECRET: ${{ secrets.SCRAPE_SECRET }}
+
+      - name: Trigger Geocode (assíncrono do scrape)
+        run: |
+          echo "Iniciando geocode em lote (só vagas sem lat/lng, usa cache)..."
+          
+          base_url="${SCRAPE_URL%/api/scrape}"
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${base_url}/api/geocode?secret=${{ secrets.SCRAPE_SECRET }}")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "Geocode HTTP Status: $http_code"
+          echo "Geocode Response: $body"
+          
+          if [ "$http_code" != "200" ]; then
+            echo "Aviso: geocode falhou (vagas já estão no site, lat/lng podem ser preenchidos depois)"
+            exit 0
+          fi
+          
+          echo "Geocode concluído."
         env:
           SCRAPE_URL: ${{ secrets.SCRAPE_URL }}
           SCRAPE_SECRET: ${{ secrets.SCRAPE_SECRET }}
