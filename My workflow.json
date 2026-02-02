@@ -1,0 +1,521 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "url": "={{ $json.urlEdital }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        -544
+      ],
+      "id": "a798c870-162c-4b06-b294-3866c43162b9",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.urlEdital }}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1648,
+        -544
+      ],
+      "id": "9597fa66-ffc0-47e1-808a-d5a047242bfc",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Function (processa todos os itens)\n// Entrada de cada item:\n//   - it.binary.data.data (base64 do HTML do \"imprimir-edital\")  OU\n//   - it.json.data (HTML em string)\n// Saída: 1 item com os campos do edital. Horário é obrigatório.\n\nconst items = $input.all();\nconst out = [];\n\n// @ts-ignore - Buffer é global no runtime do n8n\nconst B = (globalThis && globalThis.Buffer) ? globalThis.Buffer : Buffer;\n\nfunction clean(s = \"\") {\n  return s.replace(/<[^>]*>/g, \" \")\n          .replace(/&nbsp;?/g, \" \")\n          .replace(/\\s+/g, \" \")\n          .trim();\n}\n\n\n\nfor (const it of items) {\n  // 1) Obter o HTML\n  let html = \"\";\n  const b64 = it.binary?.data?.data;\n  if (b64) {\n    // binário -> base64 -> latin1\n    const buf = B.from(b64, \"base64\");\n    html = buf.toString(\"latin1\");\n  } else if (typeof it.json?.data === \"string\") {\n    // string -> reinterpretar como latin1 (corrige acentos trocados)\n    html = B.from(it.json.data, \"binary\").toString(\"latin1\");\n  } else {\n    out.push({ json: { error: \"Sem HTML neste item (nem binário nem string)\" } });\n    continue;\n  }\n\n  // 2) Cabeçalho\n  const Municipio = clean(html.match(/<b>\\s*Munic[^:]*:\\s*<\\/b>\\s*([^<]+)/i)?.[1] || \"\");\n\n  const unidRaw = clean(html.match(/<b>\\s*Unidade\\s+de\\s+Ensino:\\s*<\\/b>\\s*([^<]+)/i)?.[1] || \"\");\n  let EscolaCodigo = \"\", Escola = unidRaw;\n  const mUE = unidRaw.match(/^(\\d+)\\s*-\\s*(.*)$/);\n  if (mUE) { EscolaCodigo = mUE[1]; Escola = mUE[2]; }\n\n  const Data = html.match(/<b>\\s*Data\\s*:\\s*<\\/b>\\s*([\\d/]+)/i)?.[1] || \"\";\n\n  // Horário (tolerante a \"Horário\"/\"Hor�rio\" e formatos 08 hora(s), 8h, 08:00)\n  let HorarioTexto = clean(html.match(/<b>\\s*Hor[^<]*?rio\\s*:\\s*<\\/b>\\s*([^<]+)/i)?.[1] || \"\");\n  if (!HorarioTexto) {\n    // fallback: pega texto logo após a tag <b>...Hor*rio:</b>\n    const near = html.match(/Hor[^<]{0,10}rio\\s*:\\s*<\\/b>\\s*([^<]+)/i);\n    if (near) HorarioTexto = clean(near[1]);\n  }\n\n  let Horario = \"\";\n  {\n    // \"08 hora(s)\" ou \"8 hora(s)\"\n    const m1 = HorarioTexto.match(/\\b(\\d{1,2})\\s*hora/i);\n    // \"8h\" ou \"8:00\"\n    const m2 = HorarioTexto.match(/\\b(\\d{1,2})(?:[:h](\\d{2}))?\\b/);\n    let hh = null, mm = \"00\";\n    if (m1) {\n      hh = m1[1];\n    } else if (m2) {\n      hh = m2[1];\n      if (m2[2]) mm = m2[2];\n    }\n    if (hh != null) Horario = `${String(hh).padStart(2, \"0\")}:${String(mm).padStart(2, \"0\")}`;\n  }\n\n  // Endereço\n  const Endereco = clean(html.match(/<b>\\s*Endere[^:]*:\\s*<\\/b>\\s*([\\s\\S]*?)<\\/td>/i)?.[1] || \"\");\n\n  \n\n  // 3) Primeira linha da tabela \"Características da vaga\"\n  let Cargo=\"\", Categoria=\"\", Natureza=\"\", Justificativa=\"\", Conteudo=\"\", Nivel=\"\", Turno=\"\", CargaHorariaRB=\"\", CargaHorariaAEC=\"\", PeriodoInicial=\"\", PeriodoFinal=\"\", Observacoes=\"\";\n  const row = html.match(/<table\\s+class=\"tabela\">[\\s\\S]*?<tr>[\\s\\S]*?<\\/tr>\\s*<tr>[\\s\\S]*?<\\/tr>\\s*<tr>([\\s\\S]*?)<\\/tr>/i);\n  if (row) {\n    const tds = [...row[1].matchAll(/<td[^>]*>([\\s\\S]*?)<\\/td>/gi)].map(m => clean(m[1]));\n    Cargo            = tds[0] || \"\";\n    Categoria        = tds[1] || \"\";\n    Natureza         = tds[2] || \"\";\n    Conteudo         = tds[4] || \"\";\n    Nivel            = tds[5] || \"\";\n    Turno            = tds[6] || \"\";\n    CargaHorariaRB   = tds[7] || \"\";\n    CargaHorariaAEC  = tds[8] || \"\";\n    PeriodoInicial   = tds[9] || \"\";\n    PeriodoFinal     = tds[10] || \"\";\n    Observacoes      = tds[11] || \"\";\n  }\n\n  // 4) Validação obrigatória\n  if (!HorarioTexto && !Horario) {\n    out.push({ json: { error: \"Horário não encontrado (edital)\" } });\n    continue;\n  }\n\n  function stripAccents(s='') {\n  return s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');\n}\nfunction norm(s='') {\n  return stripAccents(String(s))\n    .replace(/\\s+/g,' ')\n    .trim()\n    .toUpperCase();\n}\nfunction toISODateBR(d='') {           // \"dd/mm/aaaa\" -> \"aaaa-mm-dd\"\n  const m = String(d).match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})$/);\n  return m ? `${m[3]}-${m[2]}-${m[1]}` : d;\n}\nfunction makeHash(s) {\n  try {\n    const crypto = require('crypto');\n    return crypto.createHash('sha1').update(s).digest('hex').slice(0,16); // 16 hex = 64 bits\n  } catch (e) {\n    // fallback bem simples (djb2)\n    let h = 5381;\n    for (let i=0;i<s.length;i++) h = ((h<<5)+h) + s.charCodeAt(i);\n    return (h>>>0).toString(16).padStart(8,'0');\n  }\n}\n\n  const base = [\n  norm(EscolaCodigo),\n  norm(toISODateBR(Data)),   // \"dd/mm/aaaa\" -> \"aaaa-mm-dd\"\n  norm(Horario),             // \"HH:MM\"\n  norm(Cargo),\n  norm(Categoria),\n  norm(Natureza),\n  norm(Turno),\n  norm(Conteudo),\n].join('|');\n\nconst UID = makeHash(base);\n  \n\n out.push({\n  json: {\n    UID,                                  // <<<<<<\n    EscolaCodigo, Escola, Municipio,\n    Data, HorarioTexto, Horario, Endereco,\n    Cargo, Categoria, Natureza, Conteudo, Nivel, Turno,\n    CargaHorariaRB, CargaHorariaAEC, PeriodoInicial, PeriodoFinal, Observacoes,\n    urlEdital: it.json?.urlEdital || \"\"\n  }\n});\n}\n\nreturn out.length ? out : [{ json: { error: \"Nenhum item processado\" } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1872,
+        -544
+      ],
+      "id": "2ad173f5-9a9c-4f3a-bc8d-8b7f6f46ff30",
+      "name": "Code3"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1LJVdEUUy-t-XRtlg8Jl49ZDouRfv3GZMFMuE0TnQyLU/edit?gid=0#gid=0",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Página1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1LJVdEUUy-t-XRtlg8Jl49ZDouRfv3GZMFMuE0TnQyLU/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "urlEdital": "={{ $json.urlEdital }}",
+            "UUID": "={{ $json.UID }}",
+            "EscolaCodigo": "={{ $json.EscolaCodigo }}",
+            "Escola": "={{ $json.Escola }}",
+            "Municipio": "={{ $json.Municipio }}",
+            "Data": "={{ $json.Data }}",
+            "Horario": "={{ $json.Horario }}",
+            "Endereco": "={{ $json.Endereco }}",
+            "Cargo": "={{ $json.Cargo }}",
+            "Categoria": "={{ $json.Categoria }}",
+            "Natureza": "={{ $json.Natureza }}",
+            "Conteudo": "={{ $json.Conteudo }}",
+            "Nivel": "={{ $json.Nivel }}",
+            "Turno": "={{ $json.Turno }}",
+            "Periodo Inicial": "={{ $json.PeriodoInicial }}",
+            "Periodo Final": "={{ $json.PeriodoFinal }}",
+            "Observacoes": "={{ $json.Observacoes }}",
+            "CargaHoráriaRB": "={{ $json.CargaHorariaRB }}"
+          },
+          "matchingColumns": [
+            "UUID"
+          ],
+          "schema": [
+            {
+              "id": "UUID",
+              "displayName": "UUID",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "EscolaCodigo",
+              "displayName": "EscolaCodigo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Escola",
+              "displayName": "Escola",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Municipio",
+              "displayName": "Municipio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Data",
+              "displayName": "Data",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Horario",
+              "displayName": "Horario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Endereco",
+              "displayName": "Endereco",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Cargo",
+              "displayName": "Cargo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Categoria",
+              "displayName": "Categoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Natureza",
+              "displayName": "Natureza",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Conteudo",
+              "displayName": "Conteudo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nivel",
+              "displayName": "Nivel",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Turno",
+              "displayName": "Turno",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Periodo Inicial",
+              "displayName": "Periodo Inicial",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Periodo Final",
+              "displayName": "Periodo Final",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Observacoes",
+              "displayName": "Observacoes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "CargaHoráriaRB",
+              "displayName": "CargaHoráriaRB",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "urlEdital",
+              "displayName": "urlEdital",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2096,
+        -544
+      ],
+      "id": "b2dc7ef3-e23a-484d-ba19-c33d1e4a1692",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "biwbsNoaq3aH9iar",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "15 8,23 * * *"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        80,
+        -544
+      ],
+      "id": "0850b26d-d3e7-4744-b458-608f015b900b",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "=https://controlequadropessoal.educacao.mg.gov.br/divulgacao/7/40/7020",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        -544
+      ],
+      "id": "12e38a50-b2bf-40ec-b4de-c87322e8639c",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "jsCode": "function clean(s=''){\n  return s.replace(/<[^>]*>/g,' ')\n          .replace(/&nbsp;/g,' ')\n          .replace(/\\s+/g,' ')\n          .trim();\n}\n\nconst items = $input.all();    // <— em vez de $input.first()\nconst out = [];\n\nfor (const item of items) {\n  // decodifica o HTML de CADA página\n  let html = '';\n  const b64 = item.binary?.data?.data;\n  html = b64 ? Buffer.from(b64, 'base64').toString('latin1')\n             : String(item.json?.data || '');\n\n  const tbMatch = html.match(/<table[^>]*class=\"tabela\\s+seletor\"[^>]*>([\\s\\S]*?)<\\/table>/i);\n  if (!tbMatch) {\n    out.push({ json: { error: 'Tabela não encontrada', page: item.json?.page } });\n    continue;\n  }\n\n  const tb = tbMatch[1];\n  const rows = [...tb.matchAll(/<tr>([\\s\\S]*?)<\\/tr>/gi)];\n  for (const r of rows) {\n    const tds = [...r[1].matchAll(/<td[^>]*>([\\s\\S]*?)<\\/td>/gi)].map(m => m[1]);\n    if (tds.length < 7) continue;\n\n    const Regional  = clean(tds[0]);\n    const Municipio = clean(tds[1]);\n    const Escola    = clean(tds[2]);\n    const Cargo     = clean(tds[3]);\n    const Categoria = clean(tds[4]);\n    const Conteudo  = clean(tds[5]);\n\n    const urlEdital = (r[1].match(/<a[^>]*class=\"icone\\s+popup\"[^>]*\\surl=\"([^\"]+)\"/i)?.[1]) || '';\n    if (!urlEdital) continue;\n\n    out.push({ json: { page: item.json?.page, Regional, Municipio, Escola, Cargo, Categoria, Conteudo, urlEdital }});\n  }\n}\n\nreturn out.length ? out : [{ json: { error: 'Sem itens' } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        -544
+      ],
+      "id": "97b24bf7-39ad-4250-a6bb-1f48b2f8027d",
+      "name": "PaginaEstado"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Function (processa todos os itens)\n// Entrada de cada item:\n//   - it.binary.data.data (base64 do HTML do \"imprimir-edital\")  OU\n//   - it.json.data (HTML em string)\n// Saída: 1 item com os campos do edital. Horário é obrigatório.\n\nconst items = $input.all();\nconst out = [];\n\n// @ts-ignore - Buffer é global no runtime do n8n\nconst B = (globalThis && globalThis.Buffer) ? globalThis.Buffer : Buffer;\n\nfunction clean(s = \"\") {\n  return s.replace(/<[^>]*>/g, \" \")\n          .replace(/&nbsp;?/g, \" \")\n          .replace(/\\s+/g, \" \")\n          .trim();\n}\n\nfor (const it of items) {\n  // 1) Obter o HTML\n  let html = \"\";\n  const b64 = it.binary?.data?.data;\n  if (b64) {\n    // binário -> base64 -> latin1\n    const buf = B.from(b64, \"base64\");\n    html = buf.toString(\"latin1\");\n  } else if (typeof it.json?.data === \"string\") {\n    // string -> reinterpretar como latin1 (corrige acentos trocados)\n    html = B.from(it.json.data, \"binary\").toString(\"latin1\");\n  } else {\n    out.push({ json: { error: \"Sem HTML neste item (nem binário nem string)\" } });\n    continue;\n  }\n\n  // 2) Cabeçalho\n  const Municipio = clean(html.match(/<b>\\s*Munic[^:]*:\\s*<\\/b>\\s*([^<]+)/i)?.[1] || \"\");\n\n  const unidRaw = clean(html.match(/<b>\\s*Unidade\\s+de\\s+Ensino:\\s*<\\/b>\\s*([^<]+)/i)?.[1] || \"\");\n  let EscolaCodigo = \"\", Escola = unidRaw;\n  const mUE = unidRaw.match(/^(\\d+)\\s*-\\s*(.*)$/);\n  if (mUE) { EscolaCodigo = mUE[1]; Escola = mUE[2]; }\n\n  const Data = html.match(/<b>\\s*Data\\s*:\\s*<\\/b>\\s*([\\d/]+)/i)?.[1] || \"\";\n\n  // Horário (tolerante a \"Horário\"/\"Hor�rio\" e formatos 08 hora(s), 8h, 08:00)\n  let HorarioTexto = clean(html.match(/<b>\\s*Hor[^<]*?rio\\s*:\\s*<\\/b>\\s*([^<]+)/i)?.[1] || \"\");\n  if (!HorarioTexto) {\n    // fallback: pega texto logo após a tag <b>...Hor*rio:</b>\n    const near = html.match(/Hor[^<]{0,10}rio\\s*:\\s*<\\/b>\\s*([^<]+)/i);\n    if (near) HorarioTexto = clean(near[1]);\n  }\n\n  let Horario = \"\";\n  {\n    // \"08 hora(s)\" ou \"8 hora(s)\"\n    const m1 = HorarioTexto.match(/\\b(\\d{1,2})\\s*hora/i);\n    // \"8h\" ou \"8:00\"\n    const m2 = HorarioTexto.match(/\\b(\\d{1,2})(?:[:h](\\d{2}))?\\b/);\n    let hh = null, mm = \"00\";\n    if (m1) {\n      hh = m1[1];\n    } else if (m2) {\n      hh = m2[1];\n      if (m2[2]) mm = m2[2];\n    }\n    if (hh != null) Horario = `${String(hh).padStart(2, \"0\")}:${String(mm).padStart(2, \"0\")}`;\n  }\n\n  // Endereço\n  const Endereco = clean(html.match(/<b>\\s*Endere[^:]*:\\s*<\\/b>\\s*([\\s\\S]*?)<\\/td>/i)?.[1] || \"\");\n\n  // 3) Primeira linha da tabela \"Características da vaga\"\n  let Cargo=\"\", Categoria=\"\", Natureza=\"\", Justificativa=\"\", Conteudo=\"\", Nivel=\"\", Turno=\"\", CargaHorariaRB=\"\", CargaHorariaAEC=\"\", PeriodoInicial=\"\", PeriodoFinal=\"\", Observacoes=\"\";\n  const row = html.match(/<table\\s+class=\"tabela\">[\\s\\S]*?<tr>[\\s\\S]*?<\\/tr>\\s*<tr>[\\s\\S]*?<\\/tr>\\s*<tr>([\\s\\S]*?)<\\/tr>/i);\n  if (row) {\n    const tds = [...row[1].matchAll(/<td[^>]*>([\\s\\S]*?)<\\/td>/gi)].map(m => clean(m[1]));\n    Cargo            = tds[0] || \"\";\n    Categoria        = tds[1] || \"\";\n    Natureza         = tds[2] || \"\";\n    Justificativa    = tds[3] || \"\";\n    Conteudo         = tds[4] || \"\";\n    Nivel            = tds[5] || \"\";\n    Turno            = tds[6] || \"\";\n    CargaHorariaRB   = tds[7] || \"\";\n    CargaHorariaAEC  = tds[8] || \"\";\n    PeriodoInicial   = tds[9] || \"\";\n    PeriodoFinal     = tds[10] || \"\";\n    Observacoes      = tds[11] || \"\";\n  }\n\n  // 4) Validação obrigatória\n  if (!HorarioTexto && !Horario) {\n    out.push({ json: { error: \"Horário não encontrado (edital)\" } });\n    continue;\n  }\n\n  out.push({\n    json: {\n      EscolaCodigo, Escola, Municipio,\n      Data, HorarioTexto, Horario, Endereco,\n      Cargo, Categoria, Natureza, Conteudo, Nivel, Turno,\n      CargaHorariaRB, CargaHorariaAEC, PeriodoInicial, PeriodoFinal, Observacoes,\n      // se veio encadeado do nó anterior\n      urlEdital: it.json?.urlEdital || \"\"\n    }\n  });\n}\n\nreturn out.length ? out : [{ json: { error: \"Nenhum item processado\" } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1424,
+        -544
+      ],
+      "id": "1798e107-10bf-4c72-bf72-6cdf26c38c72",
+      "name": "Code1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Entrada: item.binary.data (base64 do HTML, ISO-8859-1)\n// Saída: N itens: { json: { page: 1 } }, { json: { page: 2 } }, ...\n\nfunction getHtml(item) {\n  const b64 = item.binary?.data?.data;\n  if (b64) return Buffer.from(b64, 'base64').toString('latin1');\n  return String(item.json?.data || '');\n}\n\nconst html = getHtml($input.first());\n\n// 1) Tenta \"Página X de Y\"\nlet total = 1;\nconst m = html.match(/Página\\s+(\\d+)\\s+de\\s+(\\d+)/i);\nif (m) {\n  total = parseInt(m[2], 10) || 1;\n} else {\n  // 2) Fallback: pega o MAIOR /page:K nos links do paginador\n  const pages = [...html.matchAll(/\\/page:(\\d+)/gi)].map(x => parseInt(x[1], 10));\n  if (pages.length) total = Math.max(...pages);\n}\n\n// Gera 1..total\nreturn Array.from({ length: total }, (_, i) => ({ json: { page: i + 1 } }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        528,
+        -544
+      ],
+      "id": "4b1ffcef-bda1-4365-ab1f-839cd97ae713",
+      "name": "DescobrirPáginas"
+    },
+    {
+      "parameters": {
+        "url": "=https://controlequadropessoal.educacao.mg.gov.br/divulgacao/7/40/7020{{$json.page > 1 ? `/page:${$json.page}` : ''}}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        752,
+        -544
+      ],
+      "id": "21e9f3a3-ac30-41ed-ae28-a416e6185a11",
+      "name": "HTTP Request3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code3": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append or update row in sheet": {
+      "main": [
+        []
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "DescobrirPáginas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PaginaEstado": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DescobrirPáginas": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request3": {
+      "main": [
+        [
+          {
+            "node": "PaginaEstado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "d1af3ab7-4763-48a9-b1f2-0bfa994b312c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ee1cc8ca7387fc2cbebc93313e6312c6a608d96443bef7b2ad167d6e111d0c41"
+  },
+  "id": "Ad85vvQ5XulVeEor",
+  "tags": []
+}

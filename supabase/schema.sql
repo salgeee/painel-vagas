@@ -1,0 +1,66 @@
+-- Schema para o Painel de Vagas
+-- Execute este SQL no Supabase SQL Editor
+
+-- Tabela principal de vagas
+CREATE TABLE IF NOT EXISTS vagas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  uid TEXT UNIQUE NOT NULL,
+  escola_codigo TEXT,
+  escola TEXT,
+  municipio TEXT,
+  data DATE,
+  horario TIME,
+  endereco TEXT,
+  cargo TEXT,
+  categoria TEXT,
+  natureza TEXT,
+  conteudo TEXT,
+  nivel TEXT,
+  turno TEXT,
+  periodo_inicial DATE,
+  periodo_final DATE,
+  observacoes TEXT,
+  url_edital TEXT,
+  lat FLOAT,
+  lng FLOAT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Índices para performance
+CREATE INDEX IF NOT EXISTS idx_vagas_data ON vagas(data);
+CREATE INDEX IF NOT EXISTS idx_vagas_municipio ON vagas(municipio);
+CREATE INDEX IF NOT EXISTS idx_vagas_cargo ON vagas(cargo);
+CREATE INDEX IF NOT EXISTS idx_vagas_uid ON vagas(uid);
+
+-- Trigger para atualizar updated_at automaticamente
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+DROP TRIGGER IF EXISTS update_vagas_updated_at ON vagas;
+CREATE TRIGGER update_vagas_updated_at
+  BEFORE UPDATE ON vagas
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- Habilitar Row Level Security
+ALTER TABLE vagas ENABLE ROW LEVEL SECURITY;
+
+-- Política para leitura pública (anon pode ler)
+CREATE POLICY "Vagas são públicas para leitura" ON vagas
+  FOR SELECT USING (true);
+
+-- Política para inserção/atualização apenas com service_role
+CREATE POLICY "Apenas service_role pode inserir" ON vagas
+  FOR INSERT WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "Apenas service_role pode atualizar" ON vagas
+  FOR UPDATE USING (auth.role() = 'service_role');
+
+CREATE POLICY "Apenas service_role pode deletar" ON vagas
+  FOR DELETE USING (auth.role() = 'service_role');

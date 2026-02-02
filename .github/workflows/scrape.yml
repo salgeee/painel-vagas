@@ -1,0 +1,38 @@
+name: Scrape Vagas
+
+on:
+  schedule:
+    # 8:15 BRT = 11:15 UTC (horário de verão pode variar)
+    - cron: '15 11 * * *'
+    # 23:15 BRT = 02:15 UTC do dia seguinte
+    - cron: '15 2 * * *'
+  workflow_dispatch: # Permite execução manual
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Trigger Scraping
+        run: |
+          echo "Iniciando scraping às $(date)"
+          
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.SCRAPE_URL }}?secret=${{ secrets.SCRAPE_SECRET }}")
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" != "200" ]; then
+            echo "Erro no scraping!"
+            exit 1
+          fi
+          
+          echo "Scraping concluído com sucesso!"
+        env:
+          SCRAPE_URL: ${{ secrets.SCRAPE_URL }}
+          SCRAPE_SECRET: ${{ secrets.SCRAPE_SECRET }}

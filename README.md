@@ -1,36 +1,121 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Painel de Vagas - SEE/MG
 
-## Getting Started
+Aplicação web para acompanhar as vagas disponíveis na rede estadual de educação de Minas Gerais.
 
-First, run the development server:
+## Funcionalidades
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Lista de vagas com filtros (município, cargo, turno)
+- Cálculo de distância até as vagas (via OSRM)
+- Localização do usuário salva no localStorage (privacidade)
+- Atualização automática via GitHub Actions
+- Interface moderna e responsiva
+
+## Stack Tecnológica
+
+- **Frontend**: Next.js 14 (App Router) + Tailwind CSS + shadcn/ui
+- **Backend**: API Routes do Next.js
+- **Banco de Dados**: Supabase (PostgreSQL)
+- **Hosting**: Vercel
+- **Scraping**: GitHub Actions (cron)
+
+## Configuração
+
+### 1. Supabase
+
+1. Crie uma conta em [supabase.com](https://supabase.com)
+2. Crie um novo projeto
+3. Vá em SQL Editor e execute o conteúdo de `supabase/schema.sql`
+4. Vá em Settings > API e copie:
+   - Project URL
+   - anon public key
+   - service_role key (secreto!)
+
+### 2. Variáveis de Ambiente
+
+Crie um arquivo `.env.local` baseado no `.env.example`:
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
+SUPABASE_SERVICE_KEY=sua-service-role-key
+SCRAPE_SECRET=uma-string-aleatoria-segura
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Vercel
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Conecte seu repositório à Vercel
+2. Configure as variáveis de ambiente:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_KEY`
+   - `SCRAPE_SECRET`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4. GitHub Actions
 
-## Learn More
+Configure os seguintes secrets no repositório:
 
-To learn more about Next.js, take a look at the following resources:
+- `SCRAPE_URL`: URL completa do endpoint (ex: `https://seu-app.vercel.app/api/scrape`)
+- `SCRAPE_SECRET`: Mesmo valor de `SCRAPE_SECRET` nas variáveis de ambiente
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Desenvolvimento Local
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+# Instalar dependências
+npm install
 
-## Deploy on Vercel
+# Rodar em desenvolvimento
+npm run dev
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Build de produção
+npm run build
+npm start
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Executar Scraping Manualmente
+
+```bash
+curl -X POST "http://localhost:3000/api/scrape?secret=SEU_SCRAPE_SECRET"
+```
+
+Ou vá em Actions no GitHub e execute manualmente o workflow "Scrape Vagas".
+
+## Estrutura do Projeto
+
+```
+├── src/
+│   ├── app/
+│   │   ├── api/
+│   │   │   ├── vagas/route.ts    # GET vagas
+│   │   │   └── scrape/route.ts   # POST scraping
+│   │   ├── layout.tsx
+│   │   └── page.tsx
+│   ├── components/
+│   │   ├── ui/                   # shadcn/ui
+│   │   ├── AddressModal.tsx
+│   │   ├── FilterBar.tsx
+│   │   ├── Header.tsx
+│   │   ├── VagaCard.tsx
+│   │   └── VagaList.tsx
+│   └── lib/
+│       ├── distance.ts           # Cálculo OSRM
+│       ├── scraper.ts            # Lógica de scraping
+│       ├── supabase.ts           # Cliente Supabase
+│       ├── types.ts              # TypeScript types
+│       └── utils.ts              # Utilitários
+├── supabase/
+│   └── schema.sql                # Schema do banco
+└── .github/
+    └── workflows/
+        └── scrape.yml            # Cron job
+```
+
+## Privacidade
+
+- O endereço do usuário é salvo **apenas no localStorage** do navegador
+- Nunca é enviado para nossos servidores
+- O cálculo de distância usa coordenadas (lat/lng), não o endereço completo
+- O serviço OSRM é público e não armazena dados
+
+## Licença
+
+MIT
