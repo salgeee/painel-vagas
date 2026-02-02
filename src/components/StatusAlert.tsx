@@ -46,6 +46,24 @@ export function StatusAlert() {
     return null
   }
   
+  // Formata "há X tempo" para exibição
+  const formatTimeAgo = () => {
+    const h = statusData.hoursSinceUpdate
+    if (h == null || Number.isNaN(h)) {
+      return 'tempo desconhecido'
+    }
+    if (h < 1) {
+      const min = Math.round(h * 60)
+      return min <= 1 ? 'menos de 1 minuto' : `cerca de ${min} minutos`
+    }
+    if (h < 24) {
+      const horas = Math.round(h)
+      return horas === 1 ? '1 hora' : `${horas} horas`
+    }
+    const dias = Math.round(h / 24)
+    return dias === 1 ? '1 dia' : `${dias} dias`
+  }
+
   // Configuração do alerta baseado no status
   const getAlertConfig = () => {
     // Dados desatualizados
@@ -57,7 +75,7 @@ export function StatusAlert() {
         iconColor: 'text-amber-600 dark:text-amber-400',
         textColor: 'text-amber-800 dark:text-amber-200',
         title: 'Dados podem estar desatualizados',
-        message: `Última atualização há ${statusData.hoursSinceUpdate?.toFixed(0)} horas. O scraping automático pode ter falhado.`,
+        message: `Última atualização há ${formatTimeAgo()}. O scraping automático pode ter falhado.`,
       }
     }
     

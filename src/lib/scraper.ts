@@ -104,7 +104,6 @@ async function fetchHtml(url: string): Promise<FetchResult> {
 
 // Verifica se o HTML contém a estrutura esperada do site
 function isValidStructure(html: string): boolean {
-  // Verifica se tem elementos característicos do site
   const hasTable = html.includes('class="tabela') || html.includes('class=\'tabela')
   const hasEducacao = html.toLowerCase().includes('educacao') || html.toLowerCase().includes('educação')
   const hasDivulgacao = html.toLowerCase().includes('divulgacao') || html.toLowerCase().includes('divulgação')
@@ -114,13 +113,11 @@ function isValidStructure(html: string): boolean {
 
 // Descobre quantas páginas existem
 function discoverPages(html: string): number {
-  // Tenta "Página X de Y"
   const m = html.match(/Página\s+(\d+)\s+de\s+(\d+)/i)
   if (m) {
     return parseInt(m[2], 10) || 1
   }
   
-  // Fallback: pega o maior /page:K nos links
   const pages = [...html.matchAll(/\/page:(\d+)/gi)].map(x => parseInt(x[1], 10))
   if (pages.length) {
     return Math.max(...pages)
@@ -172,10 +169,8 @@ function extractEditalLinks(html: string): EditalLink[] {
 
 // Parseia o HTML de um edital individual
 function parseEdital(html: string, urlEdital: string): VagaInsert | null {
-  // Município
   const municipio = clean(html.match(/<b>\s*Munic[^:]*:\s*<\/b>\s*([^<]+)/i)?.[1] || '')
   
-  // Unidade de Ensino
   const unidRaw = clean(html.match(/<b>\s*Unidade\s+de\s+Ensino:\s*<\/b>\s*([^<]+)/i)?.[1] || '')
   let escolaCodigo = ''
   let escola = unidRaw
@@ -185,10 +180,8 @@ function parseEdital(html: string, urlEdital: string): VagaInsert | null {
     escola = mUE[2]
   }
   
-  // Data
   const data = html.match(/<b>\s*Data\s*:\s*<\/b>\s*([\d/]+)/i)?.[1] || ''
   
-  // Horário (tolerante a encoding quebrado)
   let horarioTexto = clean(html.match(/<b>\s*Hor[^<]*?rio\s*:\s*<\/b>\s*([^<]+)/i)?.[1] || '')
   if (!horarioTexto) {
     const near = html.match(/Hor[^<]{0,10}rio\s*:\s*<\/b>\s*([^<]+)/i)
@@ -211,12 +204,10 @@ function parseEdital(html: string, urlEdital: string): VagaInsert | null {
     horario = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
   }
   
-  // Endereço
   const endereco = clean(html.match(/<b>\s*Endere[^:]*:\s*<\/b>\s*([\s\S]*?)<\/td>/i)?.[1] || '')
   
-  // Características da vaga (tabela)
   let cargo = '', categoria = '', natureza = '', conteudo = '', nivel = ''
-  let turno = '', cargaHorariaRB = '', periodoInicial = '', periodoFinal = '', observacoes = ''
+  let turno = '', periodoInicial = '', periodoFinal = '', observacoes = ''
   
   const row = html.match(/<table\s+class="tabela">[\s\S]*?<tr>[\s\S]*?<\/tr>\s*<tr>[\s\S]*?<\/tr>\s*<tr>([\s\S]*?)<\/tr>/i)
   if (row) {
@@ -227,19 +218,17 @@ function parseEdital(html: string, urlEdital: string): VagaInsert | null {
     conteudo = tds[4] || ''
     nivel = tds[5] || ''
     turno = tds[6] || ''
-    cargaHorariaRB = tds[7] || ''
     periodoInicial = tds[9] || ''
     periodoFinal = tds[10] || ''
     observacoes = tds[11] || ''
   }
   
-  // Validação: horário é obrigatório
   if (!horarioTexto && !horario) {
     console.log('Horário não encontrado para:', urlEdital)
     return null
   }
   
-  // Gera UID único
+  // Gera UID único baseado nos campos principais
   const base = [
     normalize(escolaCodigo),
     normalize(toISODateBR(data)),
@@ -274,34 +263,6 @@ function parseEdital(html: string, urlEdital: string): VagaInsert | null {
   }
 }
 
-// Geocodifica um endereço usando Nominatim (gratuito)
-async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
-  if (!address) return null
-  
-  try {
-    const query = encodeURIComponent(`${address}, Minas Gerais, Brasil`)
-    const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'PainelVagas/1.0',
-      },
-    })
-    
-    const data = await response.json()
-    if (data && data[0]) {
-      return {
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon),
-      }
-    }
-  } catch (e) {
-    console.error('Erro geocoding:', e)
-  }
-  
-  return null
-}
-
 // Salva o status do scraping no Supabase
 async function saveScrapingStatus(
   status: ScrapeStatusType,
@@ -329,7 +290,7 @@ async function saveScrapingStatus(
 export async function scrapeVagas(): Promise<ScrapeResult> {
   const startTime = Date.now()
   const errors: string[] = []
-  const vagas: VagaInsert[] = []
+  const vagasMap = new Map<string, VagaInsert>() // Usa Map para deduplicar por UID
   let httpStatus: number | undefined
   
   const getDuration = () => (Date.now() - startTime) / 1000
@@ -340,7 +301,6 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
     const firstPageResult = await fetchHtml(`${BASE_URL}${DIVULGACAO_PATH}`)
     httpStatus = firstPageResult.status
     
-    // Verificar se conseguiu acessar o site
     if (!firstPageResult.ok) {
       const result: ScrapeResult = {
         status: 'FONTE_INDISPONIVEL',
@@ -351,18 +311,10 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
         durationSeconds: getDuration(),
       }
       
-      await saveScrapingStatus(
-        result.status,
-        result.message,
-        result.count,
-        result.httpStatus || null,
-        result.durationSeconds!
-      )
-      
+      await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
       return result
     }
     
-    // Verificar se a estrutura do HTML é válida
     if (!isValidStructure(firstPageResult.html)) {
       const result: ScrapeResult = {
         status: 'ESTRUTURA_INVALIDA',
@@ -373,14 +325,7 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
         durationSeconds: getDuration(),
       }
       
-      await saveScrapingStatus(
-        result.status,
-        result.message,
-        result.count,
-        result.httpStatus || null,
-        result.durationSeconds!
-      )
-      
+      await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
       return result
     }
     
@@ -394,26 +339,36 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
     const firstPageLinks = extractEditalLinks(firstPageResult.html)
     allLinks.push(...firstPageLinks)
     
-    // Processar páginas restantes
+    // Processar páginas restantes (em paralelo, máximo 3 de cada vez)
+    const pagePromises: Promise<EditalLink[]>[] = []
+    
     for (let page = 2; page <= totalPages; page++) {
       const url = `${BASE_URL}${DIVULGACAO_PATH}/page:${page}`
       
-      console.log(`Buscando página ${page}/${totalPages}...`)
-      const pageResult = await fetchHtml(url)
+      pagePromises.push(
+        (async () => {
+          console.log(`Buscando página ${page}/${totalPages}...`)
+          const pageResult = await fetchHtml(url)
+          if (pageResult.ok) {
+            return extractEditalLinks(pageResult.html)
+          } else {
+            errors.push(`Erro na página ${page}: ${pageResult.error}`)
+            return []
+          }
+        })()
+      )
       
-      if (pageResult.ok) {
-        const links = extractEditalLinks(pageResult.html)
-        allLinks.push(...links)
-      } else {
-        errors.push(`Erro na página ${page}: ${pageResult.error}`)
+      // Executar em batches de 3 páginas
+      if (pagePromises.length >= 3 || page === totalPages) {
+        const results = await Promise.all(pagePromises)
+        results.forEach(links => allLinks.push(...links))
+        pagePromises.length = 0
+        await new Promise(r => setTimeout(r, 100)) // Pequena pausa entre batches
       }
-      
-      await new Promise(r => setTimeout(r, 300))
     }
     
     console.log(`Total de editais encontrados: ${allLinks.length}`)
     
-    // Se não encontrou nenhum edital
     if (allLinks.length === 0) {
       const result: ScrapeResult = {
         status: 'SEM_VAGAS',
@@ -424,65 +379,57 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
         durationSeconds: getDuration(),
       }
       
-      await saveScrapingStatus(
-        result.status,
-        result.message,
-        result.count,
-        result.httpStatus || null,
-        result.durationSeconds!
-      )
-      
+      await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
       return result
     }
     
-    // 3. Buscar cada edital
-    for (let i = 0; i < allLinks.length; i++) {
-      const link = allLinks[i]
-      console.log(`Processando edital ${i + 1}/${allLinks.length}: ${link.urlEdital}`)
+    // 3. Buscar editais em paralelo (batches de 5)
+    const editalBatchSize = 5
+    for (let i = 0; i < allLinks.length; i += editalBatchSize) {
+      const batch = allLinks.slice(i, i + editalBatchSize)
       
-      try {
-        const editalResult = await fetchHtml(link.urlEdital)
-        
-        if (!editalResult.ok) {
-          errors.push(`Erro ao buscar edital ${link.urlEdital}: ${editalResult.error}`)
-          continue
-        }
-        
-        const vaga = parseEdital(editalResult.html, link.urlEdital)
-        
-        if (vaga) {
-          // Geocodificar se tiver endereço
-          if (vaga.endereco || vaga.escola) {
-            const addressToGeocode = vaga.endereco 
-              ? `${vaga.endereco}, ${vaga.municipio || 'Uberlândia'}`
-              : `${vaga.escola}, ${vaga.municipio || 'Uberlândia'}`
-            
-            const coords = await geocodeAddress(addressToGeocode)
-            if (coords) {
-              vaga.lat = coords.lat
-              vaga.lng = coords.lng
-            }
+      const batchPromises = batch.map(async (link, idx) => {
+        console.log(`Processando edital ${i + idx + 1}/${allLinks.length}`)
+        try {
+          const editalResult = await fetchHtml(link.urlEdital)
+          if (!editalResult.ok) {
+            errors.push(`Erro ao buscar edital: ${editalResult.error}`)
+            return null
           }
-          
-          vagas.push(vaga)
+          return parseEdital(editalResult.html, link.urlEdital)
+        } catch (e) {
+          errors.push(`Erro ao processar edital: ${e}`)
+          return null
         }
-      } catch (e) {
-        const errorMsg = `Erro ao processar ${link.urlEdital}: ${e}`
-        console.error(errorMsg)
-        errors.push(errorMsg)
-      }
+      })
       
-      await new Promise(r => setTimeout(r, 200))
+      const results = await Promise.all(batchPromises)
+      
+      // Adiciona ao Map (deduplica automaticamente pelo UID)
+      results.forEach(vaga => {
+        if (vaga) {
+          vagasMap.set(vaga.uid, vaga)
+        }
+      })
+      
+      // Pequena pausa entre batches de editais
+      if (i + editalBatchSize < allLinks.length) {
+        await new Promise(r => setTimeout(r, 50))
+      }
     }
     
-    // 4. Upsert no Supabase
+    // Converter Map para array
+    const vagas = Array.from(vagasMap.values())
+    
+    // 4. Upsert no Supabase (deduplicado)
     if (vagas.length > 0) {
       console.log(`Salvando ${vagas.length} vagas no Supabase...`)
       const supabase = createServiceClient()
       
-      const batchSize = 50
-      for (let i = 0; i < vagas.length; i += batchSize) {
-        const batch = vagas.slice(i, i + batchSize)
+      // Salvar em batches de 50
+      const saveBatchSize = 50
+      for (let i = 0; i < vagas.length; i += saveBatchSize) {
+        const batch = vagas.slice(i, i + saveBatchSize)
         
         const { error } = await supabase
           .from('vagas')
@@ -490,10 +437,13 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
         
         if (error) {
           console.error('Erro ao salvar batch:', error)
-          errors.push(`Erro ao salvar batch: ${error.message}`)
+          errors.push(`Erro ao salvar: ${error.message}`)
         }
       }
     }
+    
+    const duration = getDuration()
+    console.log(`Scraping concluído em ${duration.toFixed(1)}s`)
     
     const result: ScrapeResult = {
       status: 'OK',
@@ -501,17 +451,10 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
       count: vagas.length,
       httpStatus,
       errors,
-      durationSeconds: getDuration(),
+      durationSeconds: duration,
     }
     
-    await saveScrapingStatus(
-      result.status,
-      result.message,
-      result.count,
-      result.httpStatus || null,
-      result.durationSeconds!
-    )
-    
+    await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
     return result
     
   } catch (e) {
@@ -527,14 +470,7 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
       durationSeconds: getDuration(),
     }
     
-    await saveScrapingStatus(
-      result.status,
-      result.message,
-      result.count,
-      result.httpStatus || null,
-      result.durationSeconds!
-    )
-    
+    await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
     return result
   }
 }
