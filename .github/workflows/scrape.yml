@@ -2,10 +2,8 @@ name: Scrape Vagas
 
 on:
   schedule:
-    # 8:15 BRT = 11:15 UTC (horário de verão pode variar)
-    - cron: '15 11 * * *'
-    # 23:15 BRT = 02:15 UTC do dia seguinte
-    - cron: '15 2 * * *'
+    # A cada 30 minutos (horário UTC)
+    - cron: '*/30 * * * *'
   workflow_dispatch: # Permite execução manual
 
 jobs:
