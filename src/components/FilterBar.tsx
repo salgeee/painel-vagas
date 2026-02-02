@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 export interface Filters {
   municipio: string
   cargo: string
+  categoria: string
   turno: string
   mostrarVencidas: boolean
   ordenarPor: 'data' | 'distancia'
@@ -25,6 +26,7 @@ interface FilterBarProps {
   onFiltersChange: (filters: Filters) => void
   municipios: string[]
   cargos: string[]
+  categorias: string[]
   turnos: string[]
   totalVagas: number
   vagasFiltradas: number
@@ -35,6 +37,7 @@ export function FilterBar({
   onFiltersChange,
   municipios,
   cargos,
+  categorias,
   turnos,
   totalVagas,
   vagasFiltradas,
@@ -49,6 +52,7 @@ export function FilterBar({
     onFiltersChange({
       municipio: '',
       cargo: '',
+      categoria: '',
       turno: '',
       mostrarVencidas: false,
       ordenarPor: 'data',
@@ -58,6 +62,7 @@ export function FilterBar({
   const activeFiltersCount = [
     filters.municipio,
     filters.cargo,
+    filters.categoria,
     filters.turno,
     filters.mostrarVencidas,
   ].filter(Boolean).length
@@ -124,7 +129,7 @@ export function FilterBar({
       {/* Filtros */}
       <div className={`space-y-4 ${showFilters ? 'block' : 'hidden md:block'}`}>
         <div className="p-4 rounded-xl bg-card border shadow-sm">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {/* Município */}
             <div className="space-y-2">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -163,6 +168,29 @@ export function FilterBar({
                 <SelectContent>
                   <SelectItem value="todos">Todos os cargos</SelectItem>
                   {cargos.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Categoria profissional */}
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Categoria
+              </label>
+              <Select
+                value={filters.categoria || 'todos'}
+                onValueChange={(v) => updateFilter('categoria', v === 'todos' ? '' : v)}
+              >
+                <SelectTrigger className="bg-background">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todas as categorias</SelectItem>
+                  {categorias.map((c) => (
                     <SelectItem key={c} value={c}>
                       {c}
                     </SelectItem>

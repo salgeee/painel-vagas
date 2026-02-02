@@ -20,7 +20,18 @@ interface VagaCardProps {
 }
 
 export function VagaCard({ vaga }: VagaCardProps) {
-  const isVencida = vaga.data ? new Date(vaga.data) < new Date(new Date().toDateString()) : false
+  // Verifica se vaga está vencida considerando data+horário
+  const isVencida = (() => {
+    if (!vaga.data) return false
+    
+    const dataStr = String(vaga.data).split('T')[0]
+    const [ano, mes, dia] = dataStr.split('-').map(Number)
+    const horarioStr = vaga.horario || '00:00'
+    const [hora, minuto] = horarioStr.split(':').map(Number)
+    
+    const dataVaga = new Date(ano, mes - 1, dia, hora || 0, minuto || 0)
+    return dataVaga < new Date()
+  })()
   
   // Formata data para exibição
   const formatDate = (dateStr: string | null) => {

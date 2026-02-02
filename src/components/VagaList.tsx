@@ -45,6 +45,7 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   const [filters, setFilters] = useState<Filters>({
     municipio: '',
     cargo: '',
+    categoria: '',
     turno: '',
     mostrarVencidas: false,
     ordenarPor: 'data',
@@ -67,6 +68,11 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   
   const turnos = useMemo(() => {
     const unique = [...new Set(vagas.map(v => v.turno).filter(Boolean))]
+    return unique.sort() as string[]
+  }, [vagas])
+  
+  const categorias = useMemo(() => {
+    const unique = [...new Set(vagas.map(v => v.categoria).filter(Boolean))]
     return unique.sort() as string[]
   }, [vagas])
   
@@ -128,6 +134,29 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   const vagasFiltradas = useMemo(() => {
     let resultado = [...vagasComDistancia]
     
+    // Filtrar vencidas primeiro (data+horário < agora = vencida)
+    if (!filters.mostrarVencidas) {
+      const agora = new Date()
+      
+      resultado = resultado.filter(v => {
+        if (!v.data) return false // Sem data = não mostra
+        
+        // Pega só a parte da data no formato YYYY-MM-DD
+        const dataStr = String(v.data).split('T')[0]
+        const [ano, mes, dia] = dataStr.split('-').map(Number)
+        
+        // Pega horário se existir, senão usa 00:00
+        const horarioStr = v.horario || '00:00'
+        const [hora, minuto] = horarioStr.split(':').map(Number)
+        
+        // Cria objeto Date com a data+hora da vaga
+        const dataVaga = new Date(ano, mes - 1, dia, hora || 0, minuto || 0)
+        
+        // Vaga vencida = data+hora anterior a agora
+        return dataVaga >= agora
+      })
+    }
+    
     // Filtrar por município
     if (filters.municipio) {
       resultado = resultado.filter(v => 
@@ -142,17 +171,18 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
       )
     }
     
+    // Filtrar por categoria profissional
+    if (filters.categoria) {
+      resultado = resultado.filter(v => 
+        v.categoria?.toLowerCase().includes(filters.categoria.toLowerCase())
+      )
+    }
+    
     // Filtrar por turno
     if (filters.turno) {
       resultado = resultado.filter(v => 
         v.turno?.toLowerCase().includes(filters.turno.toLowerCase())
       )
-    }
-    
-    // Filtrar vencidas
-    if (!filters.mostrarVencidas) {
-      const hoje = new Date().toISOString().split('T')[0]
-      resultado = resultado.filter(v => !v.data || v.data >= hoje)
     }
     
     // Ordenar
@@ -219,6 +249,7 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
         onFiltersChange={setFilters}
         municipios={municipios}
         cargos={cargos}
+        categorias={categorias}
         turnos={turnos}
         totalVagas={vagas.length}
         vagasFiltradas={vagasFiltradas.length}
