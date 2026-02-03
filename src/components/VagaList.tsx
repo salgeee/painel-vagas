@@ -5,7 +5,7 @@ import { VagaCard } from './VagaCard'
 import { FilterBar, type Filters } from './FilterBar'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Vaga, VagaWithDistance, UserLocation } from '@/lib/types'
-import { getRouteDistance, getHaversineDistance } from '@/lib/distance'
+import { getRouteDistance, getHaversineDistance, getDistanceCache, setDistanceCache } from '@/lib/distance'
 import { SearchX, Loader2 } from 'lucide-react'
 
 interface VagaListProps {
@@ -76,23 +76,41 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
     return unique.sort() as string[]
   }, [vagas])
   
-  // Calcular distâncias (usa lat/lng já preenchidos pelo geocode batch no backend)
+  // Calcular distâncias (usa cache do localStorage quando existir)
   useEffect(() => {
     async function calculateDistances() {
       if (!userLocation) {
         setVagasComDistancia(vagas.map(v => ({ ...v, distanceKm: null })))
         return
       }
-      
+
+      const cache = getDistanceCache(userLocation) ?? {}
+      // Monta lista inicial com distâncias do cache (aparece na hora)
+      const initialResults: VagaWithDistance[] = vagas.map(v => {
+        const cached = v.lat != null && v.lng != null ? cache[v.id] : undefined
+        return { ...v, distanceKm: cached ?? null }
+      })
+      setVagasComDistancia(initialResults)
+
+      // Quais vagas ainda precisam de cálculo (têm lat/lng e não estão no cache)
+      const toCalculate = vagas.filter(
+        v => v.lat != null && v.lng != null && cache[v.id] === undefined
+      )
+      if (toCalculate.length === 0) {
+        setIsCalculatingDistances(false)
+        return
+      }
+
       setIsCalculatingDistances(true)
       setDistanceProgress(0)
-      const results: VagaWithDistance[] = []
-      const total = vagas.length
-      
-      for (let i = 0; i < vagas.length; i++) {
-        const vaga = vagas[i]
+      const results = [...initialResults]
+      const total = toCalculate.length
+      const updatedCache = { ...cache }
+
+      for (let i = 0; i < toCalculate.length; i++) {
+        const vaga = toCalculate[i]
         let distanceKm: number | null = null
-        
+
         if (vaga.lat != null && vaga.lng != null) {
           try {
             distanceKm = await getRouteDistance(
@@ -109,19 +127,22 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
               vaga.lng
             )
           }
-          if (i < vagas.length - 1) {
+          if (distanceKm != null) updatedCache[vaga.id] = distanceKm
+          if (i < toCalculate.length - 1) {
             await new Promise(r => setTimeout(r, 50))
           }
         }
-        
-        results.push({ ...vaga, distanceKm })
+
+        const idx = results.findIndex(r => r.id === vaga.id)
+        if (idx >= 0) results[idx] = { ...vaga, distanceKm }
+        setVagasComDistancia([...results])
         setDistanceProgress(Math.round(((i + 1) / total) * 100))
       }
-      
-      setVagasComDistancia(results)
+
+      setDistanceCache(userLocation, updatedCache)
       setIsCalculatingDistances(false)
     }
-    
+
     calculateDistances()
   }, [vagas, userLocation])
   

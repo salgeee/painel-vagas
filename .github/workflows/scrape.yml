@@ -1,3 +1,6 @@
+# O workflow apenas chama sua API (SCRAPE_URL). O 403 vem do site SEE/MG ao bloquear
+# requisições do servidor onde a API está hospedada (ex.: Vercel). Headers de navegador
+# no scraper ajudam; se ainda assim bloquear, o site pode estar barrando IPs de datacenter.
 name: Scrape Vagas
 
 on:

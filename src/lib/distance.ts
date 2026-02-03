@@ -117,3 +117,39 @@ export function clearUserLocation(): void {
     localStorage.removeItem('userLocation')
   }
 }
+
+// --- Cache de distâncias no localStorage ---
+const DISTANCE_CACHE_PREFIX = 'distanceCache_'
+const CACHE_KEY_PRECISION = 5 // casas decimais para lat/lng
+
+function getLocationCacheKey(location: UserLocation): string {
+  return `${location.lat.toFixed(CACHE_KEY_PRECISION)}_${location.lng.toFixed(CACHE_KEY_PRECISION)}`
+}
+
+/** Retorna o cache de distâncias para a localização do usuário (vagaId -> km) */
+export function getDistanceCache(location: UserLocation): Record<string, number> | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const key = DISTANCE_CACHE_PREFIX + getLocationCacheKey(location)
+    const stored = localStorage.getItem(key)
+    if (!stored) return null
+    const parsed = JSON.parse(stored) as Record<string, number>
+    return typeof parsed === 'object' && parsed !== null ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+/** Salva/atualiza o cache de distâncias para a localização do usuário */
+export function setDistanceCache(location: UserLocation, cache: Record<string, number>): void {
+  if (typeof window === 'undefined') return
+  try {
+    const key = DISTANCE_CACHE_PREFIX + getLocationCacheKey(location)
+    // Manter limite razoável para não estourar localStorage (~5MB)
+    const entries = Object.entries(cache)
+    const toKeep = entries.length > 800 ? entries.slice(-800) : entries
+    localStorage.setItem(key, JSON.stringify(Object.fromEntries(toKeep)))
+  } catch {
+    // Ignora falha (quota excedida, etc.)
+  }
+}
