@@ -241,6 +241,12 @@ export function AddressModal({ userLocation, onLocationChange }: AddressModalPro
                   <p className="text-sm text-muted-foreground mt-1 break-words">
                     {searchResult.displayName}
                   </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Município detectado:{' '}
+                    <span className="font-medium text-foreground">
+                      {searchResult.municipio || 'Não identificado'}
+                    </span>
+                  </p>
                   <p className="text-xs text-muted-foreground mt-2 font-mono">
                     Coordenadas: {searchResult.lat.toFixed(6)}, {searchResult.lng.toFixed(6)}
                   </p>

@@ -62,10 +62,23 @@ export function VagaList({
   const normalizeText = (value: string) =>
     value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   const getMunicipioKey = (value?: string | null) => (value ? normalizeText(value) : null)
+
+  const userMunicipioKey = getMunicipioKey(userLocation?.municipio)
+  const hasMunicipioMatch = useMemo(() => {
+    if (!userMunicipioKey) return false
+    return vagas.some(v => getMunicipioKey(v.municipio) === userMunicipioKey)
+  }, [vagas, userMunicipioKey])
   
   const [vagasComDistancia, setVagasComDistancia] = useState<VagaWithDistance[]>([])
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false)
   const [distanceProgress, setDistanceProgress] = useState(0)
+  const [distanceCacheBuster, setDistanceCacheBuster] = useState(0)
+
+  const handleForceDistance = () => {
+    if (!userLocation) return
+    setDistanceCache(userLocation, {})
+    setDistanceCacheBuster(prev => prev + 1)
+  }
   
   // Extrair opções únicas para os filtros
   const regionais = useMemo(() => {
@@ -106,7 +119,6 @@ export function VagaList({
         return
       }
 
-      const userMunicipioKey = getMunicipioKey(userLocation.municipio)
       if (!userMunicipioKey) {
         setVagasComDistancia(vagas.map(v => ({ ...v, distanceKm: null })))
         setIsCalculatingDistances(false)
@@ -179,7 +191,7 @@ export function VagaList({
     }
 
     calculateDistances()
-  }, [vagas, userLocation])
+  }, [vagas, userLocation, distanceCacheBuster])
   
   // Filtrar e ordenar vagas
   const vagasFiltradas = useMemo(() => {
@@ -325,6 +337,29 @@ export function VagaList({
         totalVagas={totalVagas}
         vagasFiltradas={vagasFiltradas.length}
       />
+
+      {userLocation && (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleForceDistance}
+            disabled={!userMunicipioKey || !hasMunicipioMatch}
+          >
+            Forçar cálculo de distâncias
+          </Button>
+          {!userMunicipioKey && (
+            <p className="text-xs text-muted-foreground">
+              Defina uma localização com município para calcular distâncias.
+            </p>
+          )}
+          {userMunicipioKey && !hasMunicipioMatch && (
+            <p className="text-xs text-muted-foreground">
+              Não há vagas no mesmo município da sua localização.
+            </p>
+          )}
+        </div>
+      )}
       
       {/* Aviso: ordenar por distância sem local definida */}
       {filters.ordenarPor === 'distancia' && !userLocation && vagasFiltradas.length > 0 && (
