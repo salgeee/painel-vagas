@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { AlertTriangle, WifiOff, Info, CheckCircle, X, Clock } from 'lucide-react'
+import { AlertTriangle, WifiOff, Info, X, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ScrapeStatusType } from '@/lib/types'
 

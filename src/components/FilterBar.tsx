@@ -49,12 +49,11 @@ export function FilterBar({
   const [mobileDraft, setMobileDraft] = useState<Filters>(filters)
   const isMobilePanelOpen = showFilters
   const displayedFilters = isMobilePanelOpen ? mobileDraft : filters
-  
-  useEffect(() => {
-    if (showFilters) {
-      setMobileDraft(filters)
-    }
-  }, [showFilters, filters])
+
+  const openMobileFilters = () => {
+    setMobileDraft(filters)
+    setShowFilters(true)
+  }
 
   useEffect(() => {
     if (!showFilters) return
@@ -314,7 +313,7 @@ export function FilterBar({
           <Button
             variant={showFilters ? 'secondary' : 'outline'}
             size="sm"
-            onClick={() => setShowFilters(!showFilters)}
+            onClick={() => (showFilters ? setShowFilters(false) : openMobileFilters())}
             className="md:hidden"
           >
             <SlidersHorizontal className="w-4 h-4 mr-2" />

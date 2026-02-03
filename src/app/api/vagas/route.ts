@@ -44,7 +44,11 @@ export async function GET(request: Request) {
     const { hoje, horario } = getBrazilDateTime()
     const activeFilter = `data.gt.${hoje},and(data.eq.${hoje},horario.gte.${horario})`
 
-    const applyFilters = (query: ReturnType<typeof supabase.from>) => {
+    type Filterable<T> = {
+      ilike: (column: string, pattern: string) => T
+    }
+
+    const applyFilters = <T extends Filterable<T>>(query: T): T => {
       let q = query
       if (municipio) q = q.ilike('municipio', `%${municipio}%`)
       if (regional) q = q.ilike('regional', `%${regional}%`)

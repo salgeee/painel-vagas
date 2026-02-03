@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { MapPin, Loader2, Trash2, CheckCircle, Search, Navigation, AlertCircle } from 'lucide-react'
-import { geocodeAddress, saveUserLocation, clearUserLocation } from '@/lib/distance'
+import { saveUserLocation, clearUserLocation } from '@/lib/distance'
 import type { UserLocation } from '@/lib/types'
 import { toast } from 'sonner'
 

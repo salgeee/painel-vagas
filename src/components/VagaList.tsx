@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { VagaCard } from './VagaCard'
 import { FilterBar, type Filters } from './FilterBar'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -59,15 +59,20 @@ export function VagaList({
   isLoadingMore,
   onLoadMore,
 }: VagaListProps) {
-  const normalizeText = (value: string) =>
-    value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-  const getMunicipioKey = (value?: string | null) => (value ? normalizeText(value) : null)
+  const normalizeText = useCallback(
+    (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
+    []
+  )
+  const getMunicipioKey = useCallback(
+    (value?: string | null) => (value ? normalizeText(value) : null),
+    [normalizeText]
+  )
 
   const userMunicipioKey = getMunicipioKey(userLocation?.municipio)
   const hasMunicipioMatch = useMemo(() => {
     if (!userMunicipioKey) return false
     return vagas.some(v => getMunicipioKey(v.municipio) === userMunicipioKey)
-  }, [vagas, userMunicipioKey])
+  }, [vagas, userMunicipioKey, getMunicipioKey])
   
   const [vagasComDistancia, setVagasComDistancia] = useState<VagaWithDistance[]>([])
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false)
@@ -191,7 +196,7 @@ export function VagaList({
     }
 
     calculateDistances()
-  }, [vagas, userLocation, distanceCacheBuster])
+  }, [vagas, userLocation, distanceCacheBuster, getMunicipioKey, userMunicipioKey])
   
   // Filtrar e ordenar vagas
   const vagasFiltradas = useMemo(() => {
@@ -292,7 +297,7 @@ export function VagaList({
     }
     
     return resultado
-  }, [vagasComDistancia, filters])
+  }, [vagasComDistancia, filters, normalizeText])
   
   if (isLoading) {
     return (
