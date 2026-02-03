@@ -20,6 +20,12 @@ export default function Home() {
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [totalVagas, setTotalVagas] = useState<number>(0)
+  const [stats, setStats] = useState({
+    total: 0,
+    ativas: 0,
+    hoje: 0,
+    municipios: 0,
+  })
   const [filters, setFilters] = useState<Filters>({
     regional: '',
     municipio: '',
@@ -66,6 +72,14 @@ export default function Home() {
       const total = Array.isArray(payload) ? data.length : (payload.count ?? data.length)
       setTotalVagas(total)
       setVagas(prev => (append ? [...prev, ...data] : data))
+      if (!Array.isArray(payload) && payload.stats) {
+        setStats({
+          total: payload.stats.total ?? total,
+          ativas: payload.stats.ativas ?? 0,
+          hoje: payload.stats.hoje ?? 0,
+          municipios: payload.stats.municipios ?? 0,
+        })
+      }
       setLastUpdate(new Date())
       
       if (showToast) {
@@ -112,10 +126,9 @@ export default function Home() {
   }
   
   // Estatísticas
-  const hoje = new Date().toISOString().split('T')[0]
-  const vagasAtivas = vagas.filter(v => !v.data || v.data >= hoje).length
-  const vagasHoje = vagas.filter(v => v.data === hoje).length
-  const municipiosUnicos = new Set(vagas.map(v => v.municipio).filter(Boolean)).size
+  const vagasAtivas = stats.ativas
+  const vagasHoje = stats.hoje
+  const municipiosUnicos = stats.municipios
   const hasMore = totalVagas > 0 && vagas.length < totalVagas
   
   return (
