@@ -3,8 +3,20 @@ import type { VagaInsert, ScrapeResult, ScrapeStatusType } from './types'
 import { createHash } from 'crypto'
 
 const BASE_URL = 'https://controlequadropessoal.educacao.mg.gov.br'
-const DIVULGACAO_PATH = '/divulgacao/7/40/7020'
+const DIVULGACAO_BASE_PATH = '/divulgacao/7'
+// Por padrão, busca todas as SREs de 1 a 47.
+// Pode ser sobrescrito por SCRAPE_SRE_CODES=1,2,3,... no .env.local
+const DEFAULT_SRE_CODES = Array.from({ length: 47 }, (_, i) => String(i + 1))
 const FETCH_TIMEOUT = 30000 // 30 segundos
+
+function getSreCodes(): string[] {
+  const fromEnv = process.env.SCRAPE_SRE_CODES
+  if (!fromEnv) return DEFAULT_SRE_CODES
+  return fromEnv
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
 
 // Helper para limpar texto HTML
 function clean(s: string = ''): string {
@@ -365,129 +377,130 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
       console.log('Cookies obtidos:', Object.keys(cookieJar).join(', '))
     }
 
-    // 1. Buscar primeira página para descobrir total
-    console.log('Buscando página inicial...')
-    const firstPageResult = await fetchHtml(`${BASE_URL}${DIVULGACAO_PATH}`, cookieJar)
-    httpStatus = firstPageResult.status
-    
-    if (!firstPageResult.ok) {
+    const sreCodes = getSreCodes()
+    if (sreCodes.length === 0) {
       const result: ScrapeResult = {
-        status: 'FONTE_INDISPONIVEL',
-        message: `Não foi possível acessar o site da SEE/MG: ${firstPageResult.error}`,
+        status: 'ERRO',
+        message: 'Nenhuma SRE configurada para scraping (SCRAPE_SRE_CODES vazio).',
         count: 0,
-        httpStatus: firstPageResult.status,
-        errors: [firstPageResult.error || 'Erro desconhecido'],
-        durationSeconds: getDuration(),
-      }
-      
-      await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
-      return result
-    }
-    
-    if (!isValidStructure(firstPageResult.html)) {
-      const result: ScrapeResult = {
-        status: 'ESTRUTURA_INVALIDA',
-        message: 'O site da SEE/MG retornou uma página com estrutura inesperada. O site pode estar em manutenção.',
-        count: 0,
-        httpStatus: firstPageResult.status,
-        errors: ['Estrutura HTML não reconhecida'],
-        durationSeconds: getDuration(),
-      }
-      
-      await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
-      return result
-    }
-    
-    const totalPages = discoverPages(firstPageResult.html)
-    console.log(`Total de páginas: ${totalPages}`)
-    
-    // 2. Coletar links de todas as páginas
-    const allLinks: EditalLink[] = []
-    
-    // Processar primeira página
-    const firstPageLinks = extractEditalLinks(firstPageResult.html)
-    allLinks.push(...firstPageLinks)
-    
-    // Processar páginas restantes (em paralelo, máximo 3 de cada vez)
-    const pagePromises: Promise<EditalLink[]>[] = []
-    
-    for (let page = 2; page <= totalPages; page++) {
-      const url = `${BASE_URL}${DIVULGACAO_PATH}/page:${page}`
-      
-      pagePromises.push(
-        (async () => {
-          console.log(`Buscando página ${page}/${totalPages}...`)
-          const pageResult = await fetchHtml(url, cookieJar)
-          if (pageResult.ok) {
-            return extractEditalLinks(pageResult.html)
-          } else {
-            errors.push(`Erro na página ${page}: ${pageResult.error}`)
-            return []
-          }
-        })()
-      )
-      
-      // Executar em batches de 3 páginas
-      if (pagePromises.length >= 3 || page === totalPages) {
-        const results = await Promise.all(pagePromises)
-        results.forEach(links => allLinks.push(...links))
-        pagePromises.length = 0
-        await new Promise(r => setTimeout(r, 100)) // Pequena pausa entre batches
-      }
-    }
-    
-    console.log(`Total de editais encontrados: ${allLinks.length}`)
-    
-    if (allLinks.length === 0) {
-      const result: ScrapeResult = {
-        status: 'SEM_VAGAS',
-        message: 'Não há vagas disponíveis no momento no site da SEE/MG.',
-        count: 0,
-        httpStatus,
         errors,
         durationSeconds: getDuration(),
       }
-      
-      await saveScrapingStatus(result.status, result.message, result.count, result.httpStatus || null, result.durationSeconds!)
+      await saveScrapingStatus(result.status, result.message, result.count, null, result.durationSeconds!)
       return result
     }
-    
-    // 3. Buscar editais em paralelo (batches de 5)
-    const editalBatchSize = 5
-    for (let i = 0; i < allLinks.length; i += editalBatchSize) {
-      const batch = allLinks.slice(i, i + editalBatchSize)
-      
-      const batchPromises = batch.map(async (link, idx) => {
-        console.log(`Processando edital ${i + idx + 1}/${allLinks.length}`)
-        try {
-          const editalResult = await fetchHtml(link.urlEdital, cookieJar)
-          if (!editalResult.ok) {
-            errors.push(`Erro ao buscar edital: ${editalResult.error}`)
+
+    console.log(`SREs alvo: ${sreCodes.join(', ')}`)
+
+    for (const sre of sreCodes) {
+      // Cada SRE é acessada em /divulgacao/7/{sre}
+      const path = `${DIVULGACAO_BASE_PATH}/${sre}`
+
+      // 1. Buscar primeira página para descobrir total
+      console.log(`SRE ${sre}: buscando página inicial...`)
+      const firstPageResult = await fetchHtml(`${BASE_URL}${path}`, cookieJar)
+      httpStatus = firstPageResult.status
+
+      if (!firstPageResult.ok) {
+        const msg = `SRE ${sre}: não foi possível acessar o site da SEE/MG: ${firstPageResult.error}`
+        console.error(msg)
+        errors.push(msg)
+        continue
+      }
+
+      if (!isValidStructure(firstPageResult.html)) {
+        const msg = `SRE ${sre}: página com estrutura inesperada (pode estar em manutenção).`
+        console.error(msg)
+        errors.push(msg)
+        continue
+      }
+
+      const totalPages = discoverPages(firstPageResult.html)
+      console.log(`SRE ${sre}: total de páginas: ${totalPages}`)
+
+      // 2. Coletar links de todas as páginas dessa SRE
+      const allLinks: EditalLink[] = []
+
+      // Processar primeira página
+      const firstPageLinks = extractEditalLinks(firstPageResult.html)
+      allLinks.push(...firstPageLinks)
+
+      // Processar páginas restantes (em paralelo, máximo 3 de cada vez)
+      const pagePromises: Promise<EditalLink[]>[] = []
+
+      for (let page = 2; page <= totalPages; page++) {
+        const url = `${BASE_URL}${path}/page:${page}`
+
+        pagePromises.push(
+          (async () => {
+            console.log(`SRE ${sre}: buscando página ${page}/${totalPages}...`)
+            const pageResult = await fetchHtml(url, cookieJar)
+            if (pageResult.ok) {
+              return extractEditalLinks(pageResult.html)
+            } else {
+              errors.push(`SRE ${sre}: erro na página ${page}: ${pageResult.error}`)
+              return []
+            }
+          })()
+        )
+
+        // Executar em batches de 3 páginas
+        if (pagePromises.length >= 3 || page === totalPages) {
+          const results = await Promise.all(pagePromises)
+          results.forEach((links) => allLinks.push(...links))
+          pagePromises.length = 0
+          await new Promise((r) => setTimeout(r, 100)) // Pequena pausa entre batches
+        }
+      }
+
+      console.log(`SRE ${sre}: total de editais encontrados: ${allLinks.length}`)
+      if (allLinks.length === 0) {
+        continue
+      }
+
+      // 3. Buscar editais em paralelo (batches de 5) para essa SRE
+      const editalBatchSize = 5
+      for (let i = 0; i < allLinks.length; i += editalBatchSize) {
+        const batch = allLinks.slice(i, i + editalBatchSize)
+
+        const batchPromises = batch.map(async (link, idx) => {
+          console.log(`SRE ${sre}: processando edital ${i + idx + 1}/${allLinks.length}`)
+          try {
+            const editalResult = await fetchHtml(link.urlEdital, cookieJar)
+            if (!editalResult.ok) {
+              errors.push(`SRE ${sre}: erro ao buscar edital: ${editalResult.error}`)
+              return null
+            }
+            const vaga = parseEdital(editalResult.html, link.urlEdital)
+            if (!vaga) return null
+            return {
+              ...vaga,
+              regional: link.regional || null,
+              sre_codigo: sre,
+            } satisfies VagaInsert
+          } catch (e) {
+            errors.push(`SRE ${sre}: erro ao processar edital: ${e}`)
             return null
           }
-          return parseEdital(editalResult.html, link.urlEdital)
-        } catch (e) {
-          errors.push(`Erro ao processar edital: ${e}`)
-          return null
+        })
+
+        const results = await Promise.all(batchPromises)
+
+        // Adiciona ao Map (deduplica automaticamente pelo UID, mesmo entre SREs)
+        results.forEach((vaga) => {
+          if (vaga) {
+            vagasMap.set(vaga.uid, vaga)
+          }
+        })
+
+        // Pequena pausa entre batches de editais
+        if (i + editalBatchSize < allLinks.length) {
+          await new Promise((r) => setTimeout(r, 50))
         }
-      })
-      
-      const results = await Promise.all(batchPromises)
-      
-      // Adiciona ao Map (deduplica automaticamente pelo UID)
-      results.forEach(vaga => {
-        if (vaga) {
-          vagasMap.set(vaga.uid, vaga)
-        }
-      })
-      
-      // Pequena pausa entre batches de editais
-      if (i + editalBatchSize < allLinks.length) {
-        await new Promise(r => setTimeout(r, 50))
       }
     }
-    
-    // Converter Map para array
+
+    // Converter Map para array (todas as SREs)
     const vagas = Array.from(vagasMap.values())
     
     // 4. Upsert no Supabase (deduplicado)

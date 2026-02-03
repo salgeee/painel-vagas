@@ -13,6 +13,7 @@ import { X, SlidersHorizontal, Filter, ArrowUpDown } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
 export interface Filters {
+  regional: string
   municipio: string
   cargo: string
   categoria: string
@@ -24,6 +25,7 @@ export interface Filters {
 interface FilterBarProps {
   filters: Filters
   onFiltersChange: (filters: Filters) => void
+  regionais: string[]
   municipios: string[]
   cargos: string[]
   categorias: string[]
@@ -35,6 +37,7 @@ interface FilterBarProps {
 export function FilterBar({
   filters,
   onFiltersChange,
+  regionais,
   municipios,
   cargos,
   categorias,
@@ -50,6 +53,7 @@ export function FilterBar({
   
   const clearFilters = () => {
     onFiltersChange({
+      regional: '',
       municipio: '',
       cargo: '',
       categoria: '',
@@ -60,6 +64,7 @@ export function FilterBar({
   }
   
   const activeFiltersCount = [
+    filters.regional,
     filters.municipio,
     filters.cargo,
     filters.categoria,
@@ -129,7 +134,30 @@ export function FilterBar({
       {/* Filtros */}
       <div className={`space-y-4 ${showFilters ? 'block' : 'hidden md:block'}`}>
         <div className="p-4 rounded-xl bg-card border shadow-sm">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+            {/* Regional */}
+            <div className="space-y-2 min-w-0 overflow-hidden">
+              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
+                Regional
+              </label>
+              <Select
+                value={filters.regional || 'todas'}
+                onValueChange={(v) => updateFilter('regional', v === 'todas' ? '' : v)}
+              >
+                <SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todas">Todas as regionais</SelectItem>
+                  {regionais.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {r}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Município */}
             <div className="space-y-2 min-w-0 overflow-hidden">
               <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">

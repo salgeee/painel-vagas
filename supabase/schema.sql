@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS vagas (
   uid TEXT UNIQUE NOT NULL,
   escola_codigo TEXT,
   escola TEXT,
+  regional TEXT,
+  sre_codigo TEXT,
   municipio TEXT,
   data DATE,
   horario TIME,
@@ -32,6 +34,10 @@ CREATE INDEX IF NOT EXISTS idx_vagas_data ON vagas(data);
 CREATE INDEX IF NOT EXISTS idx_vagas_municipio ON vagas(municipio);
 CREATE INDEX IF NOT EXISTS idx_vagas_cargo ON vagas(cargo);
 CREATE INDEX IF NOT EXISTS idx_vagas_uid ON vagas(uid);
+
+-- Novos campos para regional/SRE (idempotentes caso já existam)
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS regional TEXT;
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS sre_codigo TEXT;
 
 -- Trigger para atualizar updated_at automaticamente
 CREATE OR REPLACE FUNCTION update_updated_at_column()

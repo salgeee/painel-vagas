@@ -3,6 +3,8 @@ export interface Vaga {
   uid: string
   escola_codigo: string | null
   escola: string | null
+  regional: string | null
+  sre_codigo: string | null
   municipio: string | null
   data: string | null
   horario: string | null
@@ -27,6 +29,8 @@ export interface VagaInsert {
   uid: string
   escola_codigo?: string | null
   escola?: string | null
+  regional?: string | null
+  sre_codigo?: string | null
   municipio?: string | null
   data?: string | null
   horario?: string | null

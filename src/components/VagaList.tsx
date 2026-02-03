@@ -43,6 +43,7 @@ function VagaCardSkeleton() {
 
 export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   const [filters, setFilters] = useState<Filters>({
+    regional: '',
     municipio: '',
     cargo: '',
     categoria: '',
@@ -56,6 +57,11 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   const [distanceProgress, setDistanceProgress] = useState(0)
   
   // Extrair opções únicas para os filtros
+  const regionais = useMemo(() => {
+    const unique = [...new Set(vagas.map(v => v.regional).filter(Boolean))]
+    return unique.sort() as string[]
+  }, [vagas])
+  
   const municipios = useMemo(() => {
     const unique = [...new Set(vagas.map(v => v.municipio).filter(Boolean))]
     return unique.sort() as string[]
@@ -173,6 +179,13 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
       })
     }
     
+    // Filtrar por regional
+    if (filters.regional) {
+      resultado = resultado.filter(v =>
+        v.regional?.toLowerCase().includes(filters.regional.toLowerCase())
+      )
+    }
+    
     // Filtrar por município
     if (filters.municipio) {
       resultado = resultado.filter(v => 
@@ -263,6 +276,7 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
       <FilterBar
         filters={filters}
         onFiltersChange={setFilters}
+        regionais={regionais}
         municipios={municipios}
         cargos={cargos}
         categorias={categorias}
