@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Header } from '@/components/Header'
 import { VagaList } from '@/components/VagaList'
 import type { Filters } from '@/components/FilterBar'
@@ -12,6 +12,7 @@ import { GraduationCap, MapPin, Clock, ExternalLink } from 'lucide-react'
 
 export default function Home() {
   const PAGE_SIZE = 1000
+  const hasLoadedOnce = useRef(false)
   const [vagas, setVagas] = useState<Vaga[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -25,7 +26,7 @@ export default function Home() {
     cargo: '',
     categoria: '',
     turno: '',
-    mostrarVencidas: true,
+    mostrarVencidas: false,
     ordenarPor: 'data',
   })
   
@@ -79,10 +80,12 @@ export default function Home() {
   // Carregar vagas no mount e quando filtros mudarem
   useEffect(() => {
     const loadVagas = async () => {
-      setIsLoading(true)
-      setVagas([])
-      setTotalVagas(0)
+      const shouldShowSkeleton = !hasLoadedOnce.current
+      if (shouldShowSkeleton) {
+        setIsLoading(true)
+      }
       await fetchVagas({ offset: 0 })
+      hasLoadedOnce.current = true
       setIsLoading(false)
     }
     

@@ -61,6 +61,7 @@ export function VagaList({
 }: VagaListProps) {
   const normalizeText = (value: string) =>
     value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const getMunicipioKey = (value?: string | null) => (value ? normalizeText(value) : null)
   
   const [vagasComDistancia, setVagasComDistancia] = useState<VagaWithDistance[]>([])
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false)
@@ -100,21 +101,35 @@ export function VagaList({
   useEffect(() => {
     async function calculateDistances() {
       if (!userLocation) {
+        setIsCalculatingDistances(false)
         setVagasComDistancia(vagas.map(v => ({ ...v, distanceKm: null })))
+        return
+      }
+
+      const userMunicipioKey = getMunicipioKey(userLocation.municipio)
+      if (!userMunicipioKey) {
+        setVagasComDistancia(vagas.map(v => ({ ...v, distanceKm: null })))
+        setIsCalculatingDistances(false)
         return
       }
 
       const cache = getDistanceCache(userLocation) ?? {}
       // Monta lista inicial com distâncias do cache (aparece na hora)
       const initialResults: VagaWithDistance[] = vagas.map(v => {
-        const cached = v.lat != null && v.lng != null ? cache[v.id] : undefined
+        const sameMunicipio = getMunicipioKey(v.municipio) === userMunicipioKey
+        const cached =
+          sameMunicipio && v.lat != null && v.lng != null ? cache[v.id] : undefined
         return { ...v, distanceKm: cached ?? null }
       })
       setVagasComDistancia(initialResults)
 
       // Quais vagas ainda precisam de cálculo (têm lat/lng e não estão no cache)
       const toCalculate = vagas.filter(
-        v => v.lat != null && v.lng != null && cache[v.id] === undefined
+        v =>
+          getMunicipioKey(v.municipio) === userMunicipioKey &&
+          v.lat != null &&
+          v.lng != null &&
+          cache[v.id] === undefined
       )
       if (toCalculate.length === 0) {
         setIsCalculatingDistances(false)
@@ -316,6 +331,14 @@ export function VagaList({
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200">
           <p className="text-sm font-medium">
             Defina sua localização no cabeçalho (ícone de pin) para ordenar as vagas por distância.
+          </p>
+        </div>
+      )}
+
+      {filters.ordenarPor === 'distancia' && userLocation && !userLocation.municipio && vagasFiltradas.length > 0 && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200">
+          <p className="text-sm font-medium">
+            A distância só é calculada para vagas no mesmo município da sua localização. Atualize sua localização incluindo a cidade.
           </p>
         </div>
       )}

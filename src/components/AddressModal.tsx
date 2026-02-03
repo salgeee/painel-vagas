@@ -27,6 +27,7 @@ interface GeocodingResult {
   lat: number
   lng: number
   displayName: string
+  municipio: string | null
 }
 
 // Geocodifica com mais detalhes
@@ -49,11 +50,21 @@ async function geocodeWithDetails(address: string): Promise<GeocodingResult | nu
     
     const data = await response.json()
     if (data && data[0]) {
+      const addressDetails = data[0].address || {}
+      const municipio =
+        addressDetails.city ||
+        addressDetails.town ||
+        addressDetails.village ||
+        addressDetails.municipality ||
+        addressDetails.county ||
+        null
+
       return {
         address: address,
         lat: parseFloat(data[0].lat),
         lng: parseFloat(data[0].lon),
         displayName: data[0].display_name,
+        municipio: municipio ? String(municipio) : null,
       }
     }
   } catch (e) {
@@ -120,6 +131,7 @@ export function AddressModal({ userLocation, onLocationChange }: AddressModalPro
         address: address.trim(),
         lat: searchResult.lat,
         lng: searchResult.lng,
+        municipio: searchResult.municipio,
       }
       
       saveUserLocation(location)

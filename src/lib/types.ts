@@ -65,6 +65,7 @@ export interface UserLocation {
   address: string
   lat: number
   lng: number
+  municipio?: string | null
 }
 
 export interface VagaWithDistance extends Vaga {
