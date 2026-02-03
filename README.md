@@ -79,6 +79,42 @@ curl -X POST "http://localhost:3000/api/scrape?secret=SEU_SCRAPE_SECRET"
 
 Ou vá em Actions no GitHub e execute manualmente o workflow "Scrape Vagas".
 
+---
+
+## Quando o site SEE/MG retorna 403 (IP bloqueado)
+
+O site da SEE/MG pode bloquear requisições vindas de datacenters (Vercel, AWS, etc.). Se o scraping na Vercel/GitHub falhar com **HTTP 403**, use uma destas opções:
+
+### Opção 1: Scrape na sua máquina (recomendado)
+
+Rode o scrape no seu PC (IP residencial). Os dados vão direto para o Supabase; depois você pode disparar o geocode na API em produção.
+
+```bash
+# Na raiz do projeto, com .env.local configurado (Supabase + SCRAPE_SECRET)
+npm run scrape:local
+```
+
+O script:
+1. Carrega `.env` e `.env.local`
+2. Executa o scraper (requisições saem do **seu IP**)
+3. Se existir `SCRAPE_URL` e `SCRAPE_SECRET`, dispara o geocode na sua API (Vercel) para preencher lat/lng
+
+Para agendar no Windows: use o **Agendador de Tarefas** para rodar `npm run scrape:local` no horário desejado (ex.: a cada 30 min). No Mac/Linux: `crontab -e` e adicione algo como `*/30 * * * * cd /caminho/do/projeto && npm run scrape:local`.
+
+### Opção 2: GitHub Actions com self-hosted runner
+
+Rode o workflow na **sua máquina** em vez de `ubuntu-latest`:
+
+1. Em Settings > Actions > Runners, adicione um **self-hosted runner** (PC ou Raspberry Pi em casa).
+2. No `.github/workflows/scrape.yml`, troque `runs-on: ubuntu-latest` por `runs-on: self-hosted`.
+3. Ajuste o job para **rodar o scraper localmente** (checkout, `npm ci`, `npm run scrape:local`) em vez de chamar a API na Vercel. Assim as requisições à SEE/MG saem do IP da sua casa.
+
+(Se quiser, posso te passar o conteúdo exato do workflow para self-hosted.)
+
+### Opção 3: Proxy residencial (pago)
+
+Usar um serviço de proxy residencial (ex.: Bright Data, Oxylabs) e configurar o scraper para enviar as requisições por esse proxy. Funciona de qualquer host, mas tem custo e pode conflitar com os termos de uso do site.
+
 ## Estrutura do Projeto
 
 ```

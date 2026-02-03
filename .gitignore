@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# log do scrape agendado (Windows)
+scripts/scrape-log.txt

@@ -1,63 +1,33 @@
-# O workflow apenas chama sua API (SCRAPE_URL). O 403 vem do site SEE/MG ao bloquear
-# requisições do servidor onde a API está hospedada (ex.: Vercel). Headers de navegador
-# no scraper ajudam; se ainda assim bloquear, o site pode estar barrando IPs de datacenter.
-name: Scrape Vagas
+# Scrape roda local (Agendador de Tarefas no seu PC). O GitHub só dispara o geocode
+# para preencher lat/lng das vagas já salvas no Supabase (Nominatim 1 req/s, demora).
+name: Geocode Vagas
 
 on:
   schedule:
-    # A cada 30 minutos (horário UTC)
-    - cron: '*/30 * * * *'
+    # A cada 1 hora (horário UTC)
+    - cron: '0 * * * *'
   workflow_dispatch: # Permite execução manual
 
 jobs:
-  scrape:
+  geocode:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
-    steps:
-      - name: Trigger Scraping
-        id: scrape
-        run: |
-          echo "Iniciando scraping às $(date)"
-          
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            "${{ secrets.SCRAPE_URL }}?secret=${{ secrets.SCRAPE_SECRET }}")
-          
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | sed '$d')
-          
-          echo "HTTP Status: $http_code"
-          echo "Response: $body"
-          
-          if [ "$http_code" != "200" ]; then
-            echo "Erro no scraping!"
-            exit 1
-          fi
-          
-          echo "Scraping concluído com sucesso! Vagas já disponíveis no site."
-        env:
-          SCRAPE_URL: ${{ secrets.SCRAPE_URL }}
-          SCRAPE_SECRET: ${{ secrets.SCRAPE_SECRET }}
+    timeout-minutes: 15
 
-      - name: Trigger Geocode (assíncrono do scrape)
+    steps:
+      - name: Trigger Geocode
         run: |
-          echo "Iniciando geocode em lote (só vagas sem lat/lng, usa cache)..."
-          
+          echo "Iniciando geocode às $(date) UTC"
           base_url="${SCRAPE_URL%/api/scrape}"
           response=$(curl -s -w "\n%{http_code}" -X POST \
             "${base_url}/api/geocode?secret=${{ secrets.SCRAPE_SECRET }}")
-          
           http_code=$(echo "$response" | tail -n1)
           body=$(echo "$response" | sed '$d')
-          
-          echo "Geocode HTTP Status: $http_code"
-          echo "Geocode Response: $body"
-          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
           if [ "$http_code" != "200" ]; then
-            echo "Aviso: geocode falhou (vagas já estão no site, lat/lng podem ser preenchidos depois)"
+            echo "Geocode falhou (vagas já estão no site, lat/lng podem ser preenchidos depois)"
             exit 0
           fi
-          
           echo "Geocode concluído."
         env:
           SCRAPE_URL: ${{ secrets.SCRAPE_URL }}

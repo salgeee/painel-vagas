@@ -131,15 +131,15 @@ export function FilterBar({
         <div className="p-4 rounded-xl bg-card border shadow-sm">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             {/* Município */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="space-y-2 min-w-0 overflow-hidden">
+              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
                 Município
               </label>
               <Select
                 value={filters.municipio || 'todos'}
                 onValueChange={(v) => updateFilter('municipio', v === 'todos' ? '' : v)}
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -154,16 +154,16 @@ export function FilterBar({
             </div>
             
             {/* Cargo */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="space-y-2 min-w-0 overflow-hidden">
+              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
                 Cargo
               </label>
               <Select
                 value={filters.cargo || 'todos'}
                 onValueChange={(v) => updateFilter('cargo', v === 'todos' ? '' : v)}
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Todos" />
+<SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
+                <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos os cargos</SelectItem>
@@ -177,16 +177,16 @@ export function FilterBar({
             </div>
             
             {/* Categoria profissional */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="space-y-2 min-w-0 overflow-hidden">
+              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
                 Categoria
               </label>
               <Select
                 value={filters.categoria || 'todos'}
                 onValueChange={(v) => updateFilter('categoria', v === 'todos' ? '' : v)}
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Todos" />
+<SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
+                <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todas as categorias</SelectItem>
@@ -200,16 +200,16 @@ export function FilterBar({
             </div>
             
             {/* Turno */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="space-y-2 min-w-0 overflow-hidden">
+              <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
                 Turno
               </label>
               <Select
                 value={filters.turno || 'todos'}
                 onValueChange={(v) => updateFilter('turno', v === 'todos' ? '' : v)}
               >
-                <SelectTrigger className="bg-background">
-                  <SelectValue placeholder="Todos" />
+<SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
+                <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="todos">Todos os turnos</SelectItem>
@@ -223,16 +223,16 @@ export function FilterBar({
             </div>
             
             {/* Ordenação */}
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <ArrowUpDown className="w-3 h-3" />
+            <div className="space-y-2 min-w-0 overflow-hidden">
+              <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
+                <ArrowUpDown className="w-3 h-3 shrink-0" />
                 Ordenar por
               </label>
               <Select
                 value={filters.ordenarPor}
                 onValueChange={(v) => updateFilter('ordenarPor', v as 'data' | 'distancia')}
               >
-                <SelectTrigger className="bg-background">
+                <SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

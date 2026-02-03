@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "scrape:local": "tsx scripts/run-scrape.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.93.3",
@@ -23,6 +24,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "dotenv": "^16",
+    "tsx": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
