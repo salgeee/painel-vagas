@@ -11,7 +11,8 @@ import { toast } from 'sonner'
 import { GraduationCap, MapPin, Clock, ExternalLink } from 'lucide-react'
 
 export default function Home() {
-  const PAGE_SIZE = 1000
+  const INITIAL_PAGE_SIZE = 200
+  const FILTERED_PAGE_SIZE = 1000
   const hasLoadedOnce = useRef(false)
   const [vagas, setVagas] = useState<Vaga[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -25,6 +26,15 @@ export default function Home() {
     ativas: 0,
     hoje: 0,
     municipios: 0,
+  })
+  const [filterOptions, setFilterOptions] = useState<{
+    regionais: string[]
+    municipios: string[]
+    municipiosByRegional: Record<string, string[]>
+  }>({
+    regionais: [],
+    municipios: [],
+    municipiosByRegional: {},
   })
   const [filters, setFilters] = useState<Filters>({
     regional: '',
@@ -44,6 +54,15 @@ export default function Home() {
     }
   }, [])
   
+  const hasActiveFilters = Boolean(
+    filters.regional ||
+    filters.municipio ||
+    filters.cargo ||
+    filters.categoria ||
+    filters.turno
+  )
+  const pageSize = hasActiveFilters ? FILTERED_PAGE_SIZE : INITIAL_PAGE_SIZE
+
   // Buscar vagas da API
   const fetchVagas = useCallback(async ({
     showToast = false,
@@ -53,7 +72,7 @@ export default function Home() {
     try {
       const params = new URLSearchParams()
       params.set('mostrarVencidas', String(filters.mostrarVencidas))
-      params.set('limit', String(PAGE_SIZE))
+      params.set('limit', String(pageSize))
       params.set('offset', String(offset))
       if (filters.regional) params.set('regional', filters.regional)
       if (filters.municipio) params.set('municipio', filters.municipio)
@@ -79,6 +98,13 @@ export default function Home() {
           hoje: payload.stats.hoje ?? 0,
           municipios: payload.stats.municipios ?? 0,
         })
+        if (payload.stats.filters) {
+          setFilterOptions({
+            regionais: payload.stats.filters.regionais ?? [],
+            municipios: payload.stats.filters.municipios ?? [],
+            municipiosByRegional: payload.stats.filters.municipiosByRegional ?? {},
+          })
+        }
       }
       setLastUpdate(new Date())
       
@@ -89,7 +115,7 @@ export default function Home() {
       console.error('Erro ao buscar vagas:', error)
       toast.error('Erro ao carregar vagas. Tente novamente.')
     }
-  }, [filters])
+  }, [filters, pageSize])
   
   // Carregar vagas no mount e quando filtros mudarem
   useEffect(() => {
@@ -226,6 +252,7 @@ export default function Home() {
           hasMore={hasMore}
           isLoadingMore={isLoadingMore}
           onLoadMore={handleLoadMore}
+          filterOptions={filterOptions}
         />
       </main>
       

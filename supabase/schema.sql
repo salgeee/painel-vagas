@@ -35,6 +35,72 @@ CREATE INDEX IF NOT EXISTS idx_vagas_municipio ON vagas(municipio);
 CREATE INDEX IF NOT EXISTS idx_vagas_cargo ON vagas(cargo);
 CREATE INDEX IF NOT EXISTS idx_vagas_uid ON vagas(uid);
 
+-- Extensão para busca por ILIKE com % (trigram)
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+-- Índices compostos e trigram para acelerar filtros e ordenação
+CREATE INDEX IF NOT EXISTS idx_vagas_data_horario ON vagas(data, horario);
+CREATE INDEX IF NOT EXISTS idx_vagas_regional ON vagas(regional);
+CREATE INDEX IF NOT EXISTS idx_vagas_categoria ON vagas(categoria);
+CREATE INDEX IF NOT EXISTS idx_vagas_turno ON vagas(turno);
+CREATE INDEX IF NOT EXISTS idx_vagas_regional_municipio ON vagas(regional, municipio);
+CREATE INDEX IF NOT EXISTS idx_vagas_regional_trgm ON vagas USING gin (regional gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_vagas_municipio_trgm ON vagas USING gin (municipio gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_vagas_cargo_trgm ON vagas USING gin (cargo gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_vagas_categoria_trgm ON vagas USING gin (categoria gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_vagas_turno_trgm ON vagas USING gin (turno gin_trgm_ops);
+
+-- Colunas normalizadas (sem acento e em maiúsculas) para filtros rápidos
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS regional_norm TEXT;
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS municipio_norm TEXT;
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS cargo_norm TEXT;
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS categoria_norm TEXT;
+ALTER TABLE vagas ADD COLUMN IF NOT EXISTS turno_norm TEXT;
+
+CREATE OR REPLACE FUNCTION normalize_text(input TEXT)
+RETURNS TEXT AS $$
+  SELECT CASE WHEN input IS NULL THEN NULL ELSE upper(unaccent(input)) END;
+$$ LANGUAGE SQL STABLE;
+
+CREATE OR REPLACE FUNCTION set_vagas_norm_columns()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.regional_norm := normalize_text(NEW.regional);
+  NEW.municipio_norm := normalize_text(NEW.municipio);
+  NEW.cargo_norm := normalize_text(NEW.cargo);
+  NEW.categoria_norm := normalize_text(NEW.categoria);
+  NEW.turno_norm := normalize_text(NEW.turno);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS set_vagas_norm_columns ON vagas;
+CREATE TRIGGER set_vagas_norm_columns
+  BEFORE INSERT OR UPDATE ON vagas
+  FOR EACH ROW
+  EXECUTE FUNCTION set_vagas_norm_columns();
+
+UPDATE vagas
+SET
+  regional_norm = normalize_text(regional),
+  municipio_norm = normalize_text(municipio),
+  cargo_norm = normalize_text(cargo),
+  categoria_norm = normalize_text(categoria),
+  turno_norm = normalize_text(turno)
+WHERE
+  regional_norm IS NULL OR
+  municipio_norm IS NULL OR
+  cargo_norm IS NULL OR
+  categoria_norm IS NULL OR
+  turno_norm IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_vagas_regional_norm ON vagas(regional_norm);
+CREATE INDEX IF NOT EXISTS idx_vagas_municipio_norm ON vagas(municipio_norm);
+CREATE INDEX IF NOT EXISTS idx_vagas_cargo_norm ON vagas(cargo_norm);
+CREATE INDEX IF NOT EXISTS idx_vagas_categoria_norm ON vagas(categoria_norm);
+CREATE INDEX IF NOT EXISTS idx_vagas_turno_norm ON vagas(turno_norm);
+
 -- Novos campos para regional/SRE (idempotentes caso já existam)
 ALTER TABLE vagas ADD COLUMN IF NOT EXISTS regional TEXT;
 ALTER TABLE vagas ADD COLUMN IF NOT EXISTS sre_codigo TEXT;

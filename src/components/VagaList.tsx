@@ -19,6 +19,11 @@ interface VagaListProps {
   hasMore: boolean
   isLoadingMore: boolean
   onLoadMore: () => void
+  filterOptions?: {
+    regionais: string[]
+    municipios: string[]
+    municipiosByRegional: Record<string, string[]>
+  }
 }
 
 function VagaCardSkeleton() {
@@ -58,6 +63,7 @@ export function VagaList({
   hasMore,
   isLoadingMore,
   onLoadMore,
+  filterOptions,
 }: VagaListProps) {
   const normalizeText = useCallback(
     (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(),
@@ -87,18 +93,33 @@ export function VagaList({
   
   // Extrair opções únicas para os filtros
   const regionais = useMemo(() => {
+    if (filterOptions?.regionais?.length) return filterOptions.regionais
     const unique = [...new Set(vagas.map(v => v.regional).filter(Boolean))]
     return unique.sort() as string[]
-  }, [vagas])
+  }, [vagas, filterOptions])
   
   const municipios = useMemo(() => {
-    const source =
-      filters.regional
-        ? vagas.filter(v => v.regional === filters.regional)
-        : vagas
-    const unique = [...new Set(source.map(v => v.municipio).filter(Boolean))]
+    if (filterOptions?.municipios?.length) return filterOptions.municipios
+    const unique = [...new Set(vagas.map(v => v.municipio).filter(Boolean))]
     return unique.sort() as string[]
-  }, [vagas, filters.regional])
+  }, [vagas, filterOptions])
+
+  const municipiosByRegional = useMemo(() => {
+    if (filterOptions?.municipiosByRegional) return filterOptions.municipiosByRegional
+    const map = new Map<string, Set<string>>()
+    for (const vaga of vagas) {
+      if (!vaga.regional || !vaga.municipio) continue
+      if (!map.has(vaga.regional)) {
+        map.set(vaga.regional, new Set())
+      }
+      map.get(vaga.regional)?.add(vaga.municipio)
+    }
+    const result: Record<string, string[]> = {}
+    for (const [regional, municipiosSet] of map.entries()) {
+      result[regional] = Array.from(municipiosSet).sort()
+    }
+    return result
+  }, [vagas, filterOptions])
   
   const cargos = useMemo(() => {
     const unique = [...new Set(vagas.map(v => v.cargo).filter(Boolean))]
@@ -131,6 +152,8 @@ export function VagaList({
       }
 
       const cache = getDistanceCache(userLocation) ?? {}
+      const shouldCompute =
+        filters.ordenarPor === 'distancia' || distanceCacheBuster > 0
       // Monta lista inicial com distâncias do cache (aparece na hora)
       const initialResults: VagaWithDistance[] = vagas.map(v => {
         const sameMunicipio = getMunicipioKey(v.municipio) === userMunicipioKey
@@ -139,6 +162,11 @@ export function VagaList({
         return { ...v, distanceKm: cached ?? null }
       })
       setVagasComDistancia(initialResults)
+
+      if (!shouldCompute) {
+        setIsCalculatingDistances(false)
+        return
+      }
 
       // Quais vagas ainda precisam de cálculo (têm lat/lng e não estão no cache)
       const toCalculate = vagas.filter(
@@ -193,10 +221,18 @@ export function VagaList({
 
       setDistanceCache(userLocation, updatedCache)
       setIsCalculatingDistances(false)
+      if (distanceCacheBuster > 0) setDistanceCacheBuster(0)
     }
 
     calculateDistances()
-  }, [vagas, userLocation, distanceCacheBuster, getMunicipioKey, userMunicipioKey])
+  }, [
+    vagas,
+    userLocation,
+    distanceCacheBuster,
+    getMunicipioKey,
+    userMunicipioKey,
+    filters.ordenarPor,
+  ])
   
   // Filtrar e ordenar vagas
   const vagasFiltradas = useMemo(() => {
@@ -336,6 +372,7 @@ export function VagaList({
         onFiltersChange={onFiltersChange}
         regionais={regionais}
         municipios={municipios}
+        municipiosByRegional={municipiosByRegional}
         cargos={cargos}
         categorias={categorias}
         turnos={turnos}

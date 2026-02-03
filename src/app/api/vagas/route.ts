@@ -4,6 +4,29 @@ import { supabase } from '@/lib/supabase'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+type FiltersCacheValue = {
+  regionais: string[]
+  municipios: string[]
+  municipiosByRegional: Record<string, string[]>
+}
+
+const FILTERS_CACHE_TTL_MS = 5 * 60 * 1000
+const filtersCache = new Map<string, { expiresAt: number; value: FiltersCacheValue }>()
+
+const getCachedFilters = (key: string): FiltersCacheValue | null => {
+  const entry = filtersCache.get(key)
+  if (!entry) return null
+  if (entry.expiresAt < Date.now()) {
+    filtersCache.delete(key)
+    return null
+  }
+  return entry.value
+}
+
+const setCachedFilters = (key: string, value: FiltersCacheValue) => {
+  filtersCache.set(key, { expiresAt: Date.now() + FILTERS_CACHE_TTL_MS, value })
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -45,16 +68,22 @@ export async function GET(request: Request) {
     const activeFilter = `data.gt.${hoje},and(data.eq.${hoje},horario.gte.${horario})`
 
     type Filterable<T> = {
-      ilike: (column: string, pattern: string) => T
+      eq: (column: string, value: string) => T
     }
+
+    const normalizeFilterValue = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
 
     const applyFilters = <T extends Filterable<T>>(query: T): T => {
       let q = query
-      if (municipio) q = q.ilike('municipio', `%${municipio}%`)
-      if (regional) q = q.ilike('regional', `%${regional}%`)
-      if (cargo) q = q.ilike('cargo', `%${cargo}%`)
-      if (categoria) q = q.ilike('categoria', `%${categoria}%`)
-      if (turno) q = q.ilike('turno', `%${turno}%`)
+      if (municipio) q = q.eq('municipio_norm', normalizeFilterValue(municipio))
+      if (regional) q = q.eq('regional_norm', normalizeFilterValue(regional))
+      if (cargo) q = q.eq('cargo_norm', normalizeFilterValue(cargo))
+      if (categoria) q = q.eq('categoria_norm', normalizeFilterValue(categoria))
+      if (turno) q = q.eq('turno_norm', normalizeFilterValue(turno))
       return q
     }
     
@@ -84,48 +113,67 @@ export async function GET(request: Request) {
 
     const [{ count: ativasCount, error: ativasError }, { count: hojeCount, error: hojeError }] =
       await Promise.all([
-        applyFilters(
-          supabase
-            .from('vagas')
-            .select('id', { count: 'exact', head: true })
-        ).or(activeFilter),
-        applyFilters(
-          supabase
-            .from('vagas')
-            .select('id', { count: 'exact', head: true })
-        ).eq('data', hoje),
+        supabase
+          .from('vagas')
+          .select('id', { count: 'exact', head: true })
+          .or(activeFilter),
+        supabase
+          .from('vagas')
+          .select('id', { count: 'exact', head: true })
+          .eq('data', hoje),
       ])
 
     if (ativasError || hojeError) {
       console.error('Erro ao calcular stats:', ativasError || hojeError)
     }
 
-    const municipiosSet = new Set<string>()
-    const statsPageSize = 1000
-    let statsOffset = 0
-    while (true) {
-      let statsQuery = applyFilters(
-        supabase
+    const cacheKey = 'global'
+    let cachedFilters = getCachedFilters(cacheKey)
+
+    if (!cachedFilters) {
+      const municipiosSet = new Set<string>()
+      const regionaisSet = new Set<string>()
+      const municipiosByRegionalMap = new Map<string, Set<string>>()
+      const statsPageSize = 1000
+      let statsOffset = 0
+      while (true) {
+        const statsQuery = supabase
           .from('vagas')
-          .select('municipio')
+          .select('municipio, regional')
           .order('municipio', { ascending: true })
           .range(statsOffset, statsOffset + statsPageSize - 1)
-      )
-      if (!mostrarVencidas) statsQuery = statsQuery.or(activeFilter)
 
-      const { data: municipiosData, error: municipiosError } = await statsQuery
-      if (municipiosError) {
-        console.error('Erro ao calcular municípios:', municipiosError)
-        break
+        const { data: municipiosData, error: municipiosError } = await statsQuery
+        if (municipiosError) {
+          console.error('Erro ao calcular municípios:', municipiosError)
+          break
+        }
+        if (!municipiosData || municipiosData.length === 0) break
+        for (const row of municipiosData) {
+          if (row.municipio) municipiosSet.add(row.municipio)
+          if (row.regional) regionaisSet.add(row.regional)
+          if (row.regional && row.municipio) {
+            if (!municipiosByRegionalMap.has(row.regional)) {
+              municipiosByRegionalMap.set(row.regional, new Set())
+            }
+            municipiosByRegionalMap.get(row.regional)?.add(row.municipio)
+          }
+        }
+        if (municipiosData.length < statsPageSize) break
+        statsOffset += statsPageSize
       }
-      if (!municipiosData || municipiosData.length === 0) break
-      for (const row of municipiosData) {
-        if (row.municipio) municipiosSet.add(row.municipio)
+      
+      const regionais = Array.from(regionaisSet).sort()
+      const municipios = Array.from(municipiosSet).sort()
+      const municipiosByRegional: Record<string, string[]> = {}
+      for (const [regional, municipiosSet] of municipiosByRegionalMap.entries()) {
+        municipiosByRegional[regional] = Array.from(municipiosSet).sort()
       }
-      if (municipiosData.length < statsPageSize) break
-      statsOffset += statsPageSize
+
+      cachedFilters = { regionais, municipios, municipiosByRegional }
+      setCachedFilters(cacheKey, cachedFilters)
     }
-    
+
     return NextResponse.json({
       data: data || [],
       count: count ?? 0,
@@ -135,9 +183,14 @@ export async function GET(request: Request) {
         total: count ?? 0,
         ativas: ativasCount ?? 0,
         hoje: hojeCount ?? 0,
-        municipios: municipiosSet.size,
+        municipios: cachedFilters.municipios.length,
         hojeData: hoje,
         horarioAgora: horario,
+        filters: {
+          regionais: cachedFilters.regionais,
+          municipios: cachedFilters.municipios,
+          municipiosByRegional: cachedFilters.municipiosByRegional,
+        },
       },
     })
   } catch (e) {

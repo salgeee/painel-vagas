@@ -27,6 +27,7 @@ interface FilterBarProps {
   onFiltersChange: (filters: Filters) => void
   regionais: string[]
   municipios: string[]
+  municipiosByRegional?: Record<string, string[]>
   cargos: string[]
   categorias: string[]
   turnos: string[]
@@ -39,6 +40,7 @@ export function FilterBar({
   onFiltersChange,
   regionais,
   municipios,
+  municipiosByRegional,
   cargos,
   categorias,
   turnos,
@@ -64,12 +66,26 @@ export function FilterBar({
     }
   }, [showFilters])
   
+  const applyUpdate = <K extends keyof Filters>(current: Filters, key: K, value: Filters[K]) => {
+    const next = { ...current, [key]: value } as Filters
+    if (key === 'regional') {
+      const nextRegional = String(value)
+      const available = nextRegional
+        ? municipiosByRegional?.[nextRegional] ?? []
+        : municipios
+      if (next.municipio && !available.includes(next.municipio)) {
+        next.municipio = ''
+      }
+    }
+    return next
+  }
+
   const updateFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
     if (isMobilePanelOpen) {
-      setMobileDraft(prev => ({ ...prev, [key]: value }))
+      setMobileDraft(prev => applyUpdate(prev, key, value))
       return
     }
-    onFiltersChange({ ...filters, [key]: value })
+    onFiltersChange(applyUpdate(filters, key, value))
   }
   
   const clearFilters = () => {
@@ -102,9 +118,13 @@ export function FilterBar({
   
   const hasActiveFilters = activeFiltersCount > 0
 
+  const municipiosOptions = displayedFilters.regional
+    ? municipiosByRegional?.[displayedFilters.regional] ?? []
+    : municipios
+
   const filtersContent = (
     <>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-6">
         {/* Regional */}
         <div className="space-y-2 min-w-0 overflow-hidden">
           <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wider truncate">
@@ -142,7 +162,7 @@ export function FilterBar({
             </SelectTrigger>
             <SelectContent className="max-h-[60vh]">
               <SelectItem value="todos">Todos os municípios</SelectItem>
-              {municipios.map((m) => (
+              {municipiosOptions.map((m) => (
                 <SelectItem key={m} value={m}>
                   {m}
                 </SelectItem>
@@ -341,14 +361,14 @@ export function FilterBar({
             className="absolute inset-0 bg-black/40"
             onClick={() => setShowFilters(false)}
           />
-          <div className="absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl p-4 max-h-[85vh] overflow-y-auto">
+          <div className="absolute bottom-0 left-0 right-0 bg-card rounded-t-2xl px-4 pt-3 pb-4 max-h-[75vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
               <p className="text-sm font-medium">Filtros</p>
               <Button variant="ghost" size="sm" onClick={() => setShowFilters(false)}>
                 Fechar
               </Button>
             </div>
-            <div className="p-4 rounded-xl bg-card border shadow-sm">
+            <div className="space-y-4">
               {filtersContent}
             </div>
             <div className="mt-4 pt-3 border-t flex items-center gap-2">
