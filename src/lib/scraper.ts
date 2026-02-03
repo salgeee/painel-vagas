@@ -44,38 +44,84 @@ interface FetchResult {
   error?: string
 }
 
-// Headers parecidos com um navegador para reduzir chance de 403 em servidores que bloqueiam bots
+// Headers idênticos ao Chrome ao acessar o site (copiados do DevTools)
 const BROWSER_HEADERS: Record<string, string> = {
-  'Accept':
-    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-  'Accept-Encoding': 'gzip, deflate, br',
-  'Cache-Control': 'no-cache',
-  'Pragma': 'no-cache',
+  Accept:
+    'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+  'Accept-Encoding': 'gzip, deflate, br, zstd',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Cache-Control': 'max-age=0',
+  'Sec-Ch-Ua': '"Not(A:Brand";v="8", "Chromium";v="144", "Google Chrome";v="144"',
+  'Sec-Ch-Ua-Mobile': '?0',
+  'Sec-Ch-Ua-Platform': '"Windows"',
   'Sec-Fetch-Dest': 'document',
   'Sec-Fetch-Mode': 'navigate',
   'Sec-Fetch-Site': 'none',
+  'Sec-Fetch-User': '?1',
   'Upgrade-Insecure-Requests': '1',
   'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
 }
 
-// Busca HTML de uma URL com timeout e tratamento de erros
-async function fetchHtml(url: string): Promise<FetchResult> {
+// --- Cookie Jar (sessão real dentro da mesma execução) ---
+type CookieJar = Record<string, string>
+
+function parseSetCookieHeader(headerValue: string): { name: string; value: string } | null {
+  const eq = headerValue.indexOf('=')
+  if (eq === -1) return null
+  const name = headerValue.slice(0, eq).trim()
+  const valueOnly = headerValue.slice(eq + 1).split(';')[0].trim()
+  return { name, value: valueOnly }
+}
+
+function updateJarFromResponse(jar: CookieJar, response: Response): void {
+  const setCookies: string[] =
+    typeof (response.headers as Headers & { getSetCookie?(): string[] }).getSetCookie === 'function'
+      ? (response.headers as Headers & { getSetCookie(): string[] }).getSetCookie()
+      : []
+  if (setCookies.length === 0) {
+    const single = response.headers.get('set-cookie')
+    if (single) setCookies.push(single)
+  }
+  for (const raw of setCookies) {
+    const parsed = parseSetCookieHeader(raw)
+    if (parsed) jar[parsed.name] = parsed.value
+  }
+}
+
+function buildCookieHeader(jar: CookieJar): string {
+  return Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ')
+}
+
+/** Headers para cada fetch (Cookie: do jar ou SCRAPE_COOKIE se definido) */
+function getFetchHeaders(jar?: CookieJar): Record<string, string> {
+  const headers = { ...BROWSER_HEADERS }
+  const envCookie = process.env.SCRAPE_COOKIE?.trim()
+  if (envCookie) {
+    headers['Cookie'] = envCookie
+  } else if (jar && Object.keys(jar).length > 0) {
+    headers['Cookie'] = buildCookieHeader(jar)
+  }
+  return headers
+}
+
+// Busca HTML de uma URL com timeout e tratamento de erros. Se jar for passado, envia Cookie e atualiza com Set-Cookie.
+async function fetchHtml(url: string, jar?: CookieJar): Promise<FetchResult> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
-  
+
   try {
     const response = await fetch(url, {
-      headers: {
-        ...BROWSER_HEADERS,
-        Referer: BASE_URL + '/',
-      },
+      headers: getFetchHeaders(jar),
       signal: controller.signal,
     })
-    
+
     clearTimeout(timeoutId)
-    
+
+    if (jar) {
+      updateJarFromResponse(jar, response)
+    }
+
     if (!response.ok) {
       return {
         ok: false,
@@ -84,11 +130,11 @@ async function fetchHtml(url: string): Promise<FetchResult> {
         error: `HTTP ${response.status}: ${response.statusText}`,
       }
     }
-    
+
     const buffer = await response.arrayBuffer()
     const decoder = new TextDecoder('iso-8859-1')
     const html = decoder.decode(buffer)
-    
+
     return {
       ok: true,
       status: response.status,
@@ -96,9 +142,9 @@ async function fetchHtml(url: string): Promise<FetchResult> {
     }
   } catch (e) {
     clearTimeout(timeoutId)
-    
+
     const error = e as Error
-    
+
     if (error.name === 'AbortError') {
       return {
         ok: false,
@@ -107,7 +153,7 @@ async function fetchHtml(url: string): Promise<FetchResult> {
         error: 'Timeout: servidor não respondeu em 30 segundos',
       }
     }
-    
+
     return {
       ok: false,
       status: 0,
@@ -311,9 +357,17 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
   const getDuration = () => (Date.now() - startTime) / 1000
   
   try {
+    // 0. Cookie jar: sessão real — visita a homepage para obter DESIGNACAO/ROUTEID e reutiliza em todas as requisições
+    const cookieJar: CookieJar = {}
+    console.log('Obtendo cookies de sessão (homepage)...')
+    await fetchHtml(`${BASE_URL}/`, cookieJar)
+    if (Object.keys(cookieJar).length > 0) {
+      console.log('Cookies obtidos:', Object.keys(cookieJar).join(', '))
+    }
+
     // 1. Buscar primeira página para descobrir total
     console.log('Buscando página inicial...')
-    const firstPageResult = await fetchHtml(`${BASE_URL}${DIVULGACAO_PATH}`)
+    const firstPageResult = await fetchHtml(`${BASE_URL}${DIVULGACAO_PATH}`, cookieJar)
     httpStatus = firstPageResult.status
     
     if (!firstPageResult.ok) {
@@ -363,7 +417,7 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
       pagePromises.push(
         (async () => {
           console.log(`Buscando página ${page}/${totalPages}...`)
-          const pageResult = await fetchHtml(url)
+          const pageResult = await fetchHtml(url, cookieJar)
           if (pageResult.ok) {
             return extractEditalLinks(pageResult.html)
           } else {
@@ -406,7 +460,7 @@ export async function scrapeVagas(): Promise<ScrapeResult> {
       const batchPromises = batch.map(async (link, idx) => {
         console.log(`Processando edital ${i + idx + 1}/${allLinks.length}`)
         try {
-          const editalResult = await fetchHtml(link.urlEdital)
+          const editalResult = await fetchHtml(link.urlEdital, cookieJar)
           if (!editalResult.ok) {
             errors.push(`Erro ao buscar edital: ${editalResult.error}`)
             return null
