@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { VagaCard } from './VagaCard'
 import { FilterBar, type Filters } from './FilterBar'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import type { Vaga, VagaWithDistance, UserLocation } from '@/lib/types'
 import { getRouteDistance, getHaversineDistance, getDistanceCache, setDistanceCache } from '@/lib/distance'
 import { SearchX, Loader2 } from 'lucide-react'
@@ -12,6 +13,12 @@ interface VagaListProps {
   vagas: Vaga[]
   isLoading: boolean
   userLocation: UserLocation | null
+  filters: Filters
+  onFiltersChange: (filters: Filters) => void
+  totalVagas: number
+  hasMore: boolean
+  isLoadingMore: boolean
+  onLoadMore: () => void
 }
 
 function VagaCardSkeleton() {
@@ -41,16 +48,19 @@ function VagaCardSkeleton() {
   )
 }
 
-export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
-  const [filters, setFilters] = useState<Filters>({
-    regional: '',
-    municipio: '',
-    cargo: '',
-    categoria: '',
-    turno: '',
-    mostrarVencidas: false,
-    ordenarPor: 'data',
-  })
+export function VagaList({
+  vagas,
+  isLoading,
+  userLocation,
+  filters,
+  onFiltersChange,
+  totalVagas,
+  hasMore,
+  isLoadingMore,
+  onLoadMore,
+}: VagaListProps) {
+  const normalizeText = (value: string) =>
+    value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   
   const [vagasComDistancia, setVagasComDistancia] = useState<VagaWithDistance[]>([])
   const [isCalculatingDistances, setIsCalculatingDistances] = useState(false)
@@ -63,9 +73,13 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
   }, [vagas])
   
   const municipios = useMemo(() => {
-    const unique = [...new Set(vagas.map(v => v.municipio).filter(Boolean))]
+    const source =
+      filters.regional
+        ? vagas.filter(v => v.regional === filters.regional)
+        : vagas
+    const unique = [...new Set(source.map(v => v.municipio).filter(Boolean))]
     return unique.sort() as string[]
-  }, [vagas])
+  }, [vagas, filters.regional])
   
   const cargos = useMemo(() => {
     const unique = [...new Set(vagas.map(v => v.cargo).filter(Boolean))]
@@ -158,59 +172,71 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
     
     // Filtrar vencidas primeiro (data+horário < agora = vencida)
     if (!filters.mostrarVencidas) {
-      const agora = new Date()
-      
       resultado = resultado.filter(v => {
         if (!v.data) return false // Sem data = não mostra
-        
-        // Pega só a parte da data no formato YYYY-MM-DD
-        const dataStr = String(v.data).split('T')[0]
-        const [ano, mes, dia] = dataStr.split('-').map(Number)
-        
-        // Pega horário se existir, senão usa 00:00
+
+        // Data/hora atuais (em horário local)
+        const now = new Date()
+        const hoje = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+          now.getDate()
+        ).padStart(2, '0')}`
+        const nowMinutes = now.getHours() * 60 + now.getMinutes()
+
+        // Normaliza data da vaga para YYYY-MM-DD (se vier com timestamp)
+        const dataStr = String(v.data).slice(0, 10)
+
+        // Se data futura, sempre ativa
+        if (dataStr > hoje) return true
+        // Se data passada, sempre vencida
+        if (dataStr < hoje) return false
+
+        // Mesma data: compara horário
         const horarioStr = v.horario || '00:00'
         const [hora, minuto] = horarioStr.split(':').map(Number)
-        
-        // Cria objeto Date com a data+hora da vaga
-        const dataVaga = new Date(ano, mes - 1, dia, hora || 0, minuto || 0)
-        
-        // Vaga vencida = data+hora anterior a agora
-        return dataVaga >= agora
+        const vagaMinutes = (hora || 0) * 60 + (minuto || 0)
+
+        return vagaMinutes >= nowMinutes
       })
     }
     
     // Filtrar por regional
     if (filters.regional) {
       resultado = resultado.filter(v =>
-        v.regional?.toLowerCase().includes(filters.regional.toLowerCase())
+        v.regional
+          ? normalizeText(v.regional).includes(normalizeText(filters.regional))
+          : false
       )
     }
     
     // Filtrar por município
     if (filters.municipio) {
       resultado = resultado.filter(v => 
-        v.municipio?.toLowerCase().includes(filters.municipio.toLowerCase())
+        v.municipio
+          ? normalizeText(v.municipio).includes(normalizeText(filters.municipio))
+          : false
       )
     }
     
     // Filtrar por cargo
     if (filters.cargo) {
       resultado = resultado.filter(v => 
-        v.cargo?.toLowerCase().includes(filters.cargo.toLowerCase())
+        v.cargo ? normalizeText(v.cargo).includes(normalizeText(filters.cargo)) : false
       )
     }
     
     // Filtrar por categoria profissional
     if (filters.categoria) {
       resultado = resultado.filter(v => 
-        v.categoria?.toLowerCase().includes(filters.categoria.toLowerCase())
+        v.categoria
+          ? normalizeText(v.categoria).includes(normalizeText(filters.categoria))
+          : false
       )
     }
     
     // Filtrar por turno
     if (filters.turno) {
       resultado = resultado.filter(v => 
-        v.turno?.toLowerCase().includes(filters.turno.toLowerCase())
+        v.turno ? normalizeText(v.turno).includes(normalizeText(filters.turno)) : false
       )
     }
     
@@ -275,13 +301,13 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
     <div className="space-y-6">
       <FilterBar
         filters={filters}
-        onFiltersChange={setFilters}
+        onFiltersChange={onFiltersChange}
         regionais={regionais}
         municipios={municipios}
         cargos={cargos}
         categorias={categorias}
         turnos={turnos}
-        totalVagas={vagas.length}
+        totalVagas={totalVagas}
         vagasFiltradas={vagasFiltradas.length}
       />
       
@@ -324,16 +350,26 @@ export function VagaList({ vagas, isLoading, userLocation }: VagaListProps) {
           </p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {vagasFiltradas.map((vaga, index) => (
-            <div 
-              key={vaga.id} 
-              className="animate-slide-up"
-              style={{ animationDelay: `${Math.min(index * 50, 500)}ms` }}
-            >
-              <VagaCard vaga={vaga} />
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {vagasFiltradas.map((vaga, index) => (
+              <div 
+                key={vaga.id} 
+                className="animate-slide-up"
+                style={{ animationDelay: `${Math.min(index * 50, 500)}ms` }}
+              >
+                <VagaCard vaga={vaga} />
+              </div>
+            ))}
+          </div>
+
+          {hasMore && (
+            <div className="flex justify-center">
+              <Button onClick={onLoadMore} disabled={isLoadingMore}>
+                {isLoadingMore ? 'Carregando...' : 'Carregar mais'}
+              </Button>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

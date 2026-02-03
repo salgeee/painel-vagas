@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Header } from '@/components/Header'
 import { VagaList } from '@/components/VagaList'
+import type { Filters } from '@/components/FilterBar'
 import { StatusAlert } from '@/components/StatusAlert'
 import type { Vaga, UserLocation } from '@/lib/types'
 import { getUserLocation } from '@/lib/distance'
@@ -10,11 +11,23 @@ import { toast } from 'sonner'
 import { GraduationCap, MapPin, Clock, ExternalLink } from 'lucide-react'
 
 export default function Home() {
+  const PAGE_SIZE = 1000
   const [vagas, setVagas] = useState<Vaga[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [userLocation, setUserLocation] = useState<UserLocation | null>(null)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [totalVagas, setTotalVagas] = useState<number>(0)
+  const [filters, setFilters] = useState<Filters>({
+    regional: '',
+    municipio: '',
+    cargo: '',
+    categoria: '',
+    turno: '',
+    mostrarVencidas: true,
+    ordenarPor: 'data',
+  })
   
   // Carregar localização do localStorage no mount
   useEffect(() => {
@@ -25,16 +38,33 @@ export default function Home() {
   }, [])
   
   // Buscar vagas da API
-  const fetchVagas = useCallback(async (showToast = false) => {
+  const fetchVagas = useCallback(async ({
+    showToast = false,
+    append = false,
+    offset = 0,
+  }: { showToast?: boolean; append?: boolean; offset?: number } = {}) => {
     try {
-      const response = await fetch('/api/vagas?mostrarVencidas=true')
+      const params = new URLSearchParams()
+      params.set('mostrarVencidas', String(filters.mostrarVencidas))
+      params.set('limit', String(PAGE_SIZE))
+      params.set('offset', String(offset))
+      if (filters.regional) params.set('regional', filters.regional)
+      if (filters.municipio) params.set('municipio', filters.municipio)
+      if (filters.cargo) params.set('cargo', filters.cargo)
+      if (filters.categoria) params.set('categoria', filters.categoria)
+      if (filters.turno) params.set('turno', filters.turno)
+
+      const response = await fetch(`/api/vagas?${params.toString()}`)
       
       if (!response.ok) {
         throw new Error('Erro ao buscar vagas')
       }
       
-      const data = await response.json()
-      setVagas(data)
+      const payload = await response.json()
+      const data = Array.isArray(payload) ? payload : payload.data || []
+      const total = Array.isArray(payload) ? data.length : (payload.count ?? data.length)
+      setTotalVagas(total)
+      setVagas(prev => (append ? [...prev, ...data] : data))
       setLastUpdate(new Date())
       
       if (showToast) {
@@ -44,13 +74,15 @@ export default function Home() {
       console.error('Erro ao buscar vagas:', error)
       toast.error('Erro ao carregar vagas. Tente novamente.')
     }
-  }, [])
+  }, [filters])
   
-  // Carregar vagas no mount
+  // Carregar vagas no mount e quando filtros mudarem
   useEffect(() => {
     const loadVagas = async () => {
       setIsLoading(true)
-      await fetchVagas()
+      setVagas([])
+      setTotalVagas(0)
+      await fetchVagas({ offset: 0 })
       setIsLoading(false)
     }
     
@@ -60,8 +92,15 @@ export default function Home() {
   // Handler para refresh manual
   const handleRefresh = async () => {
     setIsRefreshing(true)
-    await fetchVagas(true)
+    await fetchVagas({ showToast: true, offset: 0 })
     setIsRefreshing(false)
+  }
+
+  const handleLoadMore = async () => {
+    if (isLoadingMore || isLoading) return
+    setIsLoadingMore(true)
+    await fetchVagas({ append: true, offset: vagas.length })
+    setIsLoadingMore(false)
   }
   
   // Handler para mudança de localização
@@ -74,6 +113,7 @@ export default function Home() {
   const vagasAtivas = vagas.filter(v => !v.data || v.data >= hoje).length
   const vagasHoje = vagas.filter(v => v.data === hoje).length
   const municipiosUnicos = new Set(vagas.map(v => v.municipio).filter(Boolean)).size
+  const hasMore = totalVagas > 0 && vagas.length < totalVagas
   
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-muted/30">
@@ -164,6 +204,12 @@ export default function Home() {
           vagas={vagas}
           isLoading={isLoading}
           userLocation={userLocation}
+          filters={filters}
+          onFiltersChange={setFilters}
+          totalVagas={totalVagas}
+          hasMore={hasMore}
+          isLoadingMore={isLoadingMore}
+          onLoadMore={handleLoadMore}
         />
       </main>
       
