@@ -71,30 +71,30 @@ export function VagaCard({ vaga }: VagaCardProps) {
       {/* Header colorido */}
       <div className={`h-2 ${isVencida ? 'bg-muted' : 'gradient-primary'}`} />
       
-      <CardContent className="p-4 sm:p-5 space-y-3 sm:space-y-4">
+      <CardContent className="p-3 sm:p-5 space-y-3 sm:space-y-4 min-w-0">
         {/* Título e badges */}
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-3">
-            <h3 className="font-semibold text-sm sm:text-base leading-tight group-hover:text-primary transition-colors line-clamp-2">
+            <h3 className="font-semibold text-[13px] sm:text-base leading-tight group-hover:text-primary transition-colors line-clamp-2">
               {vaga.escola || 'Escola não informada'}
             </h3>
           </div>
           
           {/* Badges de status */}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 min-w-0">
             {isVencida && (
-              <Badge variant="destructive" className="text-[10px] sm:text-xs gap-1">
+              <Badge variant="destructive" className="text-[10px] sm:text-xs gap-1 whitespace-nowrap">
                 <AlertTriangle className="w-3 h-3" />
                 Vencida
               </Badge>
             )}
             {relativeDate && !isVencida && (
-              <Badge variant="secondary" className="text-[10px] sm:text-xs bg-primary/10 text-primary border-0">
+              <Badge variant="secondary" className="text-[10px] sm:text-xs bg-primary/10 text-primary border-0 whitespace-nowrap">
                 {relativeDate}
               </Badge>
             )}
             {vaga.distanceKm !== null && (
-              <Badge className={`text-[10px] sm:text-xs gap-1 ${distanceStyle.bg} ${distanceStyle.text} border-0`}>
+              <Badge className={`text-[10px] sm:text-xs gap-1 ${distanceStyle.bg} ${distanceStyle.text} border-0 whitespace-nowrap`}>
                 <Navigation className="w-3 h-3" />
                 {vaga.distanceKm.toFixed(1)} km
               </Badge>
@@ -119,29 +119,29 @@ export function VagaCard({ vaga }: VagaCardProps) {
         </div>
         
         {/* Localização */}
-        <div className="flex items-start gap-2 text-xs sm:text-sm text-muted-foreground">
+        <div className="flex items-start gap-2 text-xs sm:text-sm text-muted-foreground min-w-0">
           <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          <span className="line-clamp-2">
+          <span className="line-clamp-2 break-words">
             {vaga.endereco || vaga.municipio || 'Endereço não informado'}
             {vaga.municipio && vaga.endereco && ` - ${vaga.municipio}`}
           </span>
         </div>
         
         {/* Tags */}
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-1.5 min-w-0">
           {vaga.cargo && (
-            <Badge variant="outline" className="text-[10px] sm:text-xs gap-1 bg-background">
+            <Badge variant="outline" className="text-[10px] sm:text-xs gap-1 bg-background max-w-full min-w-0 whitespace-normal break-words">
               <Building2 className="w-3 h-3" />
               {vaga.cargo}
             </Badge>
           )}
           {vaga.turno && (
-            <Badge variant="outline" className="text-[10px] sm:text-xs bg-background">
+            <Badge variant="outline" className="text-[10px] sm:text-xs bg-background whitespace-nowrap">
               {vaga.turno}
             </Badge>
           )}
           {vaga.categoria && (
-            <Badge variant="outline" className="text-[10px] sm:text-xs bg-background">
+            <Badge variant="outline" className="text-[10px] sm:text-xs bg-background max-w-full min-w-0 whitespace-normal break-words">
               {vaga.categoria}
             </Badge>
           )}
@@ -149,9 +149,9 @@ export function VagaCard({ vaga }: VagaCardProps) {
         
         {/* Conteúdo/Disciplina */}
         {vaga.conteudo && (
-          <div className="flex items-center gap-2 text-xs sm:text-sm p-2 rounded-lg bg-muted/50">
+          <div className="flex items-center gap-2 text-[11px] sm:text-sm p-2 rounded-lg bg-muted/50 min-w-0">
             <GraduationCap className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-            <span className="text-muted-foreground line-clamp-1">{vaga.conteudo}</span>
+            <span className="text-muted-foreground line-clamp-1 break-words">{vaga.conteudo}</span>
           </div>
         )}
         
@@ -164,8 +164,8 @@ export function VagaCard({ vaga }: VagaCardProps) {
         
         {/* Observações */}
         {vaga.observacoes && (
-          <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
-            <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-200 line-clamp-2 sm:line-clamp-3">
+          <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+            <p className="text-[11px] sm:text-xs text-amber-800 dark:text-amber-200 line-clamp-2 sm:line-clamp-3 break-words">
               {vaga.observacoes}
             </p>
           </div>

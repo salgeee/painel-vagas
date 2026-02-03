@@ -49,8 +49,12 @@ export function FilterBar({
 }: FilterBarProps) {
   const [showFilters, setShowFilters] = useState(false)
   const [mobileDraft, setMobileDraft] = useState<Filters>(filters)
+  const [municipioScrollTop, setMunicipioScrollTop] = useState(0)
   const isMobilePanelOpen = showFilters
   const displayedFilters = isMobilePanelOpen ? mobileDraft : filters
+
+  const normalizeKey = (value: string) =>
+    value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
 
   const openMobileFilters = () => {
     setMobileDraft(filters)
@@ -70,8 +74,11 @@ export function FilterBar({
     const next = { ...current, [key]: value } as Filters
     if (key === 'regional') {
       const nextRegional = String(value)
+      const normalized = nextRegional ? normalizeKey(nextRegional) : ''
       const available = nextRegional
-        ? municipiosByRegional?.[nextRegional] ?? []
+        ? municipiosByRegional?.[nextRegional] ??
+          municipiosByRegional?.[normalized] ??
+          []
         : municipios
       if (next.municipio && !available.includes(next.municipio)) {
         next.municipio = ''
@@ -81,6 +88,9 @@ export function FilterBar({
   }
 
   const updateFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
+    if (key === 'regional') {
+      setMunicipioScrollTop(0)
+    }
     if (isMobilePanelOpen) {
       setMobileDraft(prev => applyUpdate(prev, key, value))
       return
@@ -118,9 +128,35 @@ export function FilterBar({
   
   const hasActiveFilters = activeFiltersCount > 0
 
-  const municipiosOptions = displayedFilters.regional
-    ? municipiosByRegional?.[displayedFilters.regional] ?? []
+  const regionalKey = displayedFilters.regional
+  const municipiosOptions = regionalKey
+    ? municipiosByRegional?.[regionalKey] ??
+      municipiosByRegional?.[normalizeKey(regionalKey)] ??
+      []
     : municipios
+
+  const municipioDisabled = !regionalKey
+  const shouldVirtualizeMunicipios = municipiosOptions.length > 200
+  const MUNICIPIO_ITEM_HEIGHT = 34
+  const MUNICIPIO_VIEWPORT_HEIGHT = 240
+  const MUNICIPIO_OVERSCAN = 6
+  const totalMunicipios = municipiosOptions.length
+  const startIndex = shouldVirtualizeMunicipios
+    ? Math.max(0, Math.floor(municipioScrollTop / MUNICIPIO_ITEM_HEIGHT) - MUNICIPIO_OVERSCAN)
+    : 0
+  const visibleCount = shouldVirtualizeMunicipios
+    ? Math.ceil(MUNICIPIO_VIEWPORT_HEIGHT / MUNICIPIO_ITEM_HEIGHT) + MUNICIPIO_OVERSCAN * 2
+    : totalMunicipios
+  const endIndex = shouldVirtualizeMunicipios
+    ? Math.min(totalMunicipios, startIndex + visibleCount)
+    : totalMunicipios
+  const visibleMunicipios = shouldVirtualizeMunicipios
+    ? municipiosOptions.slice(startIndex, endIndex)
+    : municipiosOptions
+  const paddingTop = shouldVirtualizeMunicipios ? startIndex * MUNICIPIO_ITEM_HEIGHT : 0
+  const paddingBottom = shouldVirtualizeMunicipios
+    ? (totalMunicipios - endIndex) * MUNICIPIO_ITEM_HEIGHT
+    : 0
 
   const filtersContent = (
     <>
@@ -156,19 +192,45 @@ export function FilterBar({
           <Select
             value={displayedFilters.municipio || 'todos'}
             onValueChange={(v) => updateFilter('municipio', v === 'todos' ? '' : v)}
+            onOpenChange={(open) => open && setMunicipioScrollTop(0)}
+            disabled={municipioDisabled}
           >
             <SelectTrigger className="w-full max-w-full bg-background min-w-0 shrink [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate [&_[data-slot=select-value]]:block">
-              <SelectValue placeholder="Todos" />
+              <SelectValue placeholder={municipioDisabled ? 'Selecione uma regional' : 'Todos'} />
             </SelectTrigger>
-            <SelectContent className="max-h-[60vh]">
-              <SelectItem value="todos">Todos os municípios</SelectItem>
-              {municipiosOptions.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {m}
+            <SelectContent
+              className="max-h-[60vh]"
+              onScroll={(e) => setMunicipioScrollTop(e.currentTarget.scrollTop)}
+            >
+              {municipioDisabled ? (
+                <SelectItem value="disabled" disabled>
+                  Selecione uma regional
                 </SelectItem>
-              ))}
+              ) : (
+                <>
+                  <SelectItem value="todos">Todos os municípios</SelectItem>
+                  {shouldVirtualizeMunicipios ? (
+                    <div style={{ paddingTop, paddingBottom }}>
+                      {visibleMunicipios.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {m}
+                        </SelectItem>
+                      ))}
+                    </div>
+                  ) : (
+                    visibleMunicipios.map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))
+                  )}
+                </>
+              )}
             </SelectContent>
           </Select>
+          {municipioDisabled && (
+            <p className="text-[11px] text-muted-foreground">Escolha uma regional primeiro.</p>
+          )}
         </div>
         
         {/* Cargo */}
