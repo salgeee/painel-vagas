@@ -167,7 +167,7 @@ export default function Home() {
                 </div>
                 <div>
                   <p className="text-2xl font-bold">{vagasHoje}</p>
-                  <p className="text-xs text-muted-foreground">Para hoje</p>
+                  <p className="text-xs text-muted-foreground">Total hoje</p>
                 </div>
               </div>
             </div>
